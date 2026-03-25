@@ -5,6 +5,11 @@ import socket
 import warnings
 from datetime import datetime, timezone
 
+try:
+    import orjson
+except ImportError:  # pragma: no cover - optional dependency
+    orjson = None
+
 
 class SafePlainFormatter(logging.Formatter):
     def format(self, record):
@@ -66,5 +71,8 @@ class JsonFormatter(logging.Formatter):
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
+
+        if orjson is not None:
+            return orjson.dumps(payload, default=str).decode("utf-8")
 
         return json.dumps(payload, ensure_ascii=False, default=str)

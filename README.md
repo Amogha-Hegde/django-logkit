@@ -20,6 +20,12 @@ Optional color support:
 pip install "django-logkit[color]"
 ```
 
+Optional high-performance JSON support:
+
+```bash
+pip install "django-logkit[json]"
+```
+
 ## Public API
 
 ```python
@@ -53,6 +59,8 @@ LOGGING = get_logger_config(
     console_style="json",
     file_style="json",
     include_request_id=True,
+    log_format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
+    log_colors={"INFO": "green", "ERROR": "red"},
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",
@@ -73,6 +81,26 @@ Arguments:
 - `app_loggers`: additional logger names to configure
 - `logger_levels`: per-logger level overrides
 - `include_request_id`: adds request ID filter support to handlers
+- `log_format`: optional override for the plain/color formatter string
+- `log_colors`: optional override for color formatter level-to-color mapping
+
+Default `log_format`:
+
+```python
+"[%(asctime)s] [%(process)s:%(thread)s] [%(levelname)s] [%(name)s:%(lineno)d %(funcName)s()] %(message)s"
+```
+
+Default `log_colors`:
+
+```python
+{
+    "DEBUG": "blue",
+    "INFO": "bold_white",
+    "WARNING": "yellow",
+    "ERROR": "red",
+    "CRITICAL": "bold_red",
+}
+```
 
 ## Backward-Compatible Helpers
 
@@ -160,6 +188,46 @@ Optional service metadata can be added with environment variables:
 - `DJANGO_LOGKIT_SERVICE_NAME`
 - `DJANGO_LOGKIT_ENVIRONMENT`
 
+If `orjson` is installed through the optional `json` extra, JSON logs are serialized with `orjson`. Otherwise the formatter falls back to Python's standard `json` module.
+
+## Formatter Fields
+
+For `log_format`, you can use standard Python `logging` record attributes such as:
+
+- `%(name)s`
+- `%(levelno)s`
+- `%(levelname)s`
+- `%(pathname)s`
+- `%(filename)s`
+- `%(module)s`
+- `%(lineno)d`
+- `%(funcName)s`
+- `%(created)f`
+- `%(asctime)s`
+- `%(msecs)d`
+- `%(relativeCreated)d`
+- `%(thread)d`
+- `%(threadName)s`
+- `%(taskName)s`
+- `%(process)d`
+- `%(processName)s`
+- `%(message)s`
+
+Custom field added by `django-logkit`:
+
+- `%(request_id)s`
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    console_style="plain",
+    include_request_id=True,
+    log_format="[%(levelname)s] [%(name)s] [%(request_id)s] %(message)s",
+)
+```
+
 ## Sample Output
 
 Plain / file output:
@@ -231,6 +299,7 @@ LOGGING = get_logger_config(
     console_style=os.environ.get("LOG_CONSOLE_STYLE", "json"),
     file_style=os.environ.get("LOG_FILE_STYLE", "json"),
     include_request_id=get_bool_env("LOG_INCLUDE_REQUEST_ID", "true"),
+    log_format=os.environ.get("LOG_FORMAT") or None,
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",
@@ -243,6 +312,7 @@ LOGGING = get_logger_config(
 
 - File logging uses UTF-8 and `delay=True`.
 - Color output falls back to plain formatting if `colorlog` is not installed, and emits a runtime warning.
+- JSON output uses `orjson` when installed via the optional `json` extra, otherwise it falls back to the standard library.
 - `log_file_name`, `log_when`, `log_backup`, and log styles are validated before config is returned.
 - `MIDNIGHT` is normalized correctly for `TimedRotatingFileHandler`.
 - The root logger stays at `WARNING` to limit noisy third-party logs.

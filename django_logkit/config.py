@@ -29,13 +29,12 @@ VALID_LOG_WHEN_VALUES = {"S", "M", "H", "D", "MIDNIGHT", "W0", "W1", "W2", "W3",
 VALID_LOG_STYLES = {"plain", "color", "json"}
 VALID_LOG_WHEN_VALUES_UPPER = {value.upper() for value in VALID_LOG_WHEN_VALUES}
 
-LOG_FORMAT = (
+DEFAULT_LOG_FORMAT = (
     "[%(asctime)s] [%(process)s:%(thread)s] [%(levelname)s] "
     "[%(name)s:%(lineno)d %(funcName)s()] %(message)s"
 )
 REQUEST_ID_SUFFIX = " [request_id=%(request_id)s]"
-COLOR_LOG_FORMAT = "%(log_color)s" + LOG_FORMAT
-LOG_COLORS = {
+DEFAULT_LOG_COLORS = {
     "DEBUG": "blue",
     "INFO": "bold_white",
     "WARNING": "yellow",
@@ -96,6 +95,34 @@ def _validate_log_file_name(log_file_name):
     return path.name
 
 
+def _validate_log_format(log_format):
+    if log_format is None:
+        return DEFAULT_LOG_FORMAT
+
+    if not isinstance(log_format, str) or not log_format.strip():
+        raise ValueError("log_format must be a non-empty string")
+
+    return log_format
+
+
+def _validate_log_colors(log_colors):
+    if log_colors is None:
+        return dict(DEFAULT_LOG_COLORS)
+
+    if not isinstance(log_colors, dict):
+        raise ValueError("log_colors must be a dictionary of level name to color")
+
+    normalized_log_colors = {}
+    for level_name, color_name in log_colors.items():
+        if not isinstance(level_name, str) or not level_name.strip():
+            raise ValueError("log_colors keys must be non-empty strings")
+        if not isinstance(color_name, str) or not color_name.strip():
+            raise ValueError("log_colors values must be non-empty strings")
+        normalized_log_colors[level_name.strip().upper()] = color_name.strip()
+
+    return normalized_log_colors
+
+
 def _validate_base_dir(base_dir):
     if isinstance(base_dir, Path):
         return base_dir
@@ -152,13 +179,14 @@ def _get_formatter_name(log_style):
     return PLAIN_FORMATTER
 
 
-def _build_formatters(include_request_id):
-    plain_format = LOG_FORMAT + REQUEST_ID_SUFFIX if include_request_id else LOG_FORMAT
+def _build_formatters(include_request_id, log_format, log_colors):
+    base_format = _validate_log_format(log_format)
+    plain_format = base_format + REQUEST_ID_SUFFIX if include_request_id else base_format
     return {
         COLOR_FORMATTER: {
             "()": "django_logkit.formatters.SafeColoredFormatter",
             "format": "%(log_color)s" + plain_format,
-            "log_colors": LOG_COLORS,
+            "log_colors": _validate_log_colors(log_colors),
         },
         PLAIN_FORMATTER: {
             "()": "django_logkit.formatters.SafePlainFormatter",
@@ -249,6 +277,8 @@ def _build_logging_config(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    log_format=None,
+    log_colors=None,
 ):
     normalized_log_level = _validate_log_level(log_level)
     active_handlers = [CONSOLE_HANDLER]
@@ -267,7 +297,11 @@ def _build_logging_config(
         "version": 1,
         "disable_existing_loggers": False,
         "filters": _build_filters(include_request_id),
-        "formatters": _build_formatters(include_request_id),
+        "formatters": _build_formatters(
+            include_request_id=include_request_id,
+            log_format=log_format,
+            log_colors=log_colors,
+        ),
         "handlers": _build_handlers(
             console_formatter=_get_formatter_name(console_style),
             include_request_id=include_request_id,
@@ -308,6 +342,8 @@ def get_logger_config_with_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    log_format=None,
+    log_colors=None,
 ):
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
@@ -321,6 +357,8 @@ def get_logger_config_with_file(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        log_format=log_format,
+        log_colors=log_colors,
     )
 
 
@@ -330,6 +368,8 @@ def get_logger_config_without_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    log_format=None,
+    log_colors=None,
 ):
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
@@ -338,6 +378,8 @@ def get_logger_config_without_file(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        log_format=log_format,
+        log_colors=log_colors,
     )
 
 
@@ -352,6 +394,8 @@ def get_logger_config(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    log_format=None,
+    log_colors=None,
 ):
     file_name = None
     if log_file_name is not None:
@@ -369,4 +413,6 @@ def get_logger_config(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        log_format=log_format,
+        log_colors=log_colors,
     )

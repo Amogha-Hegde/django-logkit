@@ -20,6 +20,9 @@ dependencies = [
 color = [
     "colorlog>=6.8.0",
 ]
+json = [
+    "orjson>=3.10.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["django_logkit*"]
