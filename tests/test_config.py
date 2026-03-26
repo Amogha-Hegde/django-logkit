@@ -156,6 +156,7 @@ def test_get_logger_config_uses_default_log_format_and_colors():
 
     assert logging_config["formatters"][config.PLAIN_FORMATTER]["format"] == config.DEFAULT_LOG_FORMAT
     assert logging_config["formatters"][config.COLOR_FORMATTER]["log_colors"] == config.DEFAULT_LOG_COLORS
+    assert logging_config["formatters"][config.PLAIN_FORMATTER]["log_timezone"] == config.DEFAULT_LOG_TIMEZONE
 
 
 def test_get_logger_config_accepts_custom_json_fields():

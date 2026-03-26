@@ -13,6 +13,7 @@ DEFAULT_LOG_BACKUP = 100
 DEFAULT_LOG_WHEN = "W0"
 DEFAULT_FILE_ENCODING = "utf-8"
 DEFAULT_LOG_STYLE = "plain"
+DEFAULT_LOG_TIMEZONE = "UTC"
 DEFAULT_APP_LOGGERS = (
     "billiard",
     "celery",
@@ -143,7 +144,7 @@ def _validate_json_fields(json_fields):
 
 def _validate_log_timezone(log_timezone):
     if log_timezone is None:
-        return None
+        return DEFAULT_LOG_TIMEZONE
 
     if not isinstance(log_timezone, str) or not log_timezone.strip():
         raise ValueError("log_timezone must be a non-empty string or None")
@@ -401,7 +402,7 @@ def get_logger_config_with_file(
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
-    log_timezone=None,
+    log_timezone=DEFAULT_LOG_TIMEZONE,
 ):
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
@@ -431,7 +432,7 @@ def get_logger_config_without_file(
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
-    log_timezone=None,
+    log_timezone=DEFAULT_LOG_TIMEZONE,
 ):
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
@@ -462,7 +463,7 @@ def get_logger_config(
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
-    log_timezone=None,
+    log_timezone=DEFAULT_LOG_TIMEZONE,
 ):
     file_name = _resolve_file_logging(
         enable_file_logging=enable_file_logging,
