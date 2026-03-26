@@ -158,6 +158,30 @@ def test_get_logger_config_uses_default_log_format_and_colors():
     assert logging_config["formatters"][config.COLOR_FORMATTER]["log_colors"] == config.DEFAULT_LOG_COLORS
 
 
+def test_get_logger_config_accepts_custom_json_fields():
+    logging_config = config.get_logger_config(
+        log_level="INFO",
+        enable_file_logging=False,
+        console_style="json",
+        json_fields={"ts": "timestamp", "msg": "message"},
+    )
+
+    assert logging_config["formatters"][config.JSON_FORMATTER]["json_fields"] == {"ts": "timestamp", "msg": "message"}
+
+
+def test_get_logger_config_accepts_log_timezone():
+    logging_config = config.get_logger_config(
+        log_level="INFO",
+        enable_file_logging=False,
+        console_style="json",
+        log_timezone="UTC",
+    )
+
+    assert logging_config["formatters"][config.PLAIN_FORMATTER]["log_timezone"] == "UTC"
+    assert logging_config["formatters"][config.COLOR_FORMATTER]["log_timezone"] == "UTC"
+    assert logging_config["formatters"][config.JSON_FORMATTER]["log_timezone"] == "UTC"
+
+
 def test_get_logger_config_accepts_string_base_dir(tmp_path):
     logging_config = config.get_logger_config(
         log_level="INFO",
@@ -177,6 +201,10 @@ def test_get_logger_config_accepts_string_base_dir(tmp_path):
         ({"log_level": "INFO", "base_dir": Path("."), "log_file_name": ""}, "log_file_name must be a non-empty string"),
         ({"log_level": "INFO", "log_colors": []}, "log_colors must be a dictionary of level name to color"),
         ({"log_level": "INFO", "log_colors": {1: "red"}}, "log_colors keys must be non-empty strings"),
+        ({"log_level": "INFO", "json_fields": []}, "json_fields must be a dictionary of output key to record field name"),
+        ({"log_level": "INFO", "json_fields": {"": "message"}}, "json_fields keys must be non-empty strings"),
+        ({"log_level": "INFO", "json_fields": {"msg": ""}}, "json_fields values must be non-empty strings"),
+        ({"log_level": "INFO", "log_timezone": ""}, "log_timezone must be a non-empty string or None"),
         ({"log_level": "INFO", "logger_levels": []}, "logger_levels must be a dictionary of logger name to log level"),
         ({"log_level": "INFO", "log_when": "", "base_dir": Path("."), "log_file_name": "app.log"}, "log_when must be a non-empty string"),
     ],

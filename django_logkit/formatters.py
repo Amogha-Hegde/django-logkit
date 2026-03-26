@@ -4,6 +4,7 @@ import os
 import socket
 import warnings
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 try:
     import orjson
@@ -11,7 +12,48 @@ except ImportError:  # pragma: no cover - optional dependency
     orjson = None
 
 
+DEFAULT_JSON_FIELDS = {
+    "timestamp": "timestamp",
+    "level": "levelname",
+    "hostname": "hostname",
+    "logger": "name",
+    "message": "message",
+    "module": "module",
+    "function": "funcName",
+    "line": "lineno",
+    "process": "process",
+    "thread": "thread",
+    "request_id": "request_id",
+}
+
+
+def _resolve_timezone(log_timezone):
+    if log_timezone is None:
+        return timezone.utc
+
+    if not isinstance(log_timezone, str) or not log_timezone.strip():
+        raise ValueError("log_timezone must be a non-empty string or None")
+
+    normalized_log_timezone = log_timezone.strip()
+    if normalized_log_timezone.lower() == "utc":
+        return timezone.utc
+    if normalized_log_timezone.lower() == "local":
+        return datetime.now().astimezone().tzinfo
+
+    return ZoneInfo(normalized_log_timezone)
+
+
 class SafePlainFormatter(logging.Formatter):
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_timezone=None):
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
+        self.log_timezone = _resolve_timezone(log_timezone)
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=self.log_timezone)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat(sep=" ", timespec="milliseconds")
+
     def format(self, record):
         if not hasattr(record, "request_id"):
             record.request_id = "-"
@@ -19,7 +61,8 @@ class SafePlainFormatter(logging.Formatter):
 
 
 class SafeColoredFormatter(SafePlainFormatter):
-    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_colors=None):
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_colors=None, log_timezone=None):
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate, log_timezone=log_timezone)
         try:
             from colorlog import ColoredFormatter
         except ImportError:
@@ -28,7 +71,13 @@ class SafeColoredFormatter(SafePlainFormatter):
                 RuntimeWarning,
                 stacklevel=2,
             )
-            self._formatter = SafePlainFormatter(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
+            self._formatter = SafePlainFormatter(
+                fmt=fmt,
+                datefmt=datefmt,
+                style=style,
+                validate=validate,
+                log_timezone=log_timezone,
+            )
         else:
             self._formatter = ColoredFormatter(
                 fmt=fmt,
@@ -37,6 +86,7 @@ class SafeColoredFormatter(SafePlainFormatter):
                 validate=validate,
                 log_colors=log_colors,
             )
+            self._formatter.formatTime = self.formatTime
 
     def format(self, record):
         if not hasattr(record, "request_id"):
@@ -45,29 +95,43 @@ class SafeColoredFormatter(SafePlainFormatter):
 
 
 class JsonFormatter(logging.Formatter):
+    def __init__(self, json_fields=None, log_timezone=None):
+        super().__init__()
+        self.json_fields = dict(json_fields or DEFAULT_JSON_FIELDS)
+        self.log_timezone = _resolve_timezone(log_timezone)
+
+    def _resolve_field_value(self, record, field_name):
+        if field_name == "timestamp":
+            return datetime.fromtimestamp(record.created, tz=self.log_timezone).isoformat()
+        if field_name == "asctime":
+            return self.formatTime(record, self.datefmt)
+        if field_name == "message":
+            return record.getMessage()
+        if field_name == "hostname":
+            return socket.gethostname()
+        if field_name == "request_id":
+            return getattr(record, "request_id", None)
+        return getattr(record, field_name, None)
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=self.log_timezone)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat(sep=" ", timespec="milliseconds")
+
     def format(self, record):
-        payload = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
-            "level": record.levelname,
-            "hostname": socket.gethostname(),
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-            "process": record.process,
-            "thread": record.thread,
-        }
+        payload = {}
+        for output_key, field_name in self.json_fields.items():
+            value = self._resolve_field_value(record, field_name)
+            if value is not None:
+                payload[output_key] = value
+
         service_name = os.getenv("DJANGO_LOGKIT_SERVICE_NAME")
         environment = os.getenv("DJANGO_LOGKIT_ENVIRONMENT")
         if service_name:
             payload["service"] = service_name
         if environment:
             payload["environment"] = environment
-
-        request_id = getattr(record, "request_id", None)
-        if request_id:
-            payload["request_id"] = request_id
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

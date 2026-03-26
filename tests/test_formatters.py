@@ -28,6 +28,14 @@ def test_safe_plain_formatter_injects_request_id():
     assert formatter.format(record) == "hello [-]"
 
 
+def test_safe_plain_formatter_uses_configured_timezone():
+    formatter = formatters.SafePlainFormatter("%(asctime)s %(message)s", log_timezone="UTC")
+    record = make_record()
+    record.created = 0
+
+    assert formatter.format(record).startswith("1970-01-01 00:00:00.000+00:00 hello")
+
+
 def test_safe_colored_formatter_falls_back_without_colorlog(monkeypatch):
     original_import = __import__
 
@@ -93,6 +101,44 @@ def test_json_formatter_uses_orjson_when_available(monkeypatch):
     monkeypatch.setattr(formatters, "orjson", DummyOrjson())
 
     assert formatter.format(record) == '{"ok":true}'
+
+
+def test_json_formatter_supports_dynamic_json_fields(monkeypatch):
+    formatter = formatters.JsonFormatter(
+        json_fields={
+            "ts": "timestamp",
+            "severity": "levelname",
+            "logger_name": "name",
+            "time": "asctime",
+            "msg": "message",
+            "rid": "request_id",
+        }
+    )
+    record = make_record("invoice created")
+    record.request_id = "req-2"
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    rendered = formatter.format(record)
+
+    assert '"ts":' in rendered
+    assert '"severity": "INFO"' in rendered
+    assert '"logger_name": "payments.service"' in rendered
+    assert '"time":' in rendered
+    assert '"msg": "invoice created"' in rendered
+    assert '"rid": "req-2"' in rendered
+    assert '"message":' not in rendered
+
+
+def test_json_formatter_uses_configured_timezone(monkeypatch):
+    formatter = formatters.JsonFormatter(json_fields={"ts": "timestamp", "time": "asctime"}, log_timezone="UTC")
+    record = make_record("invoice created")
+    record.created = 0
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    rendered = formatter.format(record)
+
+    assert '"ts": "1970-01-01T00:00:00+00:00"' in rendered
+    assert '"time": "1970-01-01 00:00:00.000+00:00"' in rendered
 
 
 def test_json_formatter_includes_exception(monkeypatch):

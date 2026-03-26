@@ -123,6 +123,34 @@ def _validate_log_colors(log_colors):
     return normalized_log_colors
 
 
+def _validate_json_fields(json_fields):
+    if json_fields is None:
+        return None
+
+    if not isinstance(json_fields, dict):
+        raise ValueError("json_fields must be a dictionary of output key to record field name")
+
+    normalized_json_fields = {}
+    for output_key, field_name in json_fields.items():
+        if not isinstance(output_key, str) or not output_key.strip():
+            raise ValueError("json_fields keys must be non-empty strings")
+        if not isinstance(field_name, str) or not field_name.strip():
+            raise ValueError("json_fields values must be non-empty strings")
+        normalized_json_fields[output_key.strip()] = field_name.strip()
+
+    return normalized_json_fields
+
+
+def _validate_log_timezone(log_timezone):
+    if log_timezone is None:
+        return None
+
+    if not isinstance(log_timezone, str) or not log_timezone.strip():
+        raise ValueError("log_timezone must be a non-empty string or None")
+
+    return log_timezone.strip()
+
+
 def _validate_base_dir(base_dir):
     if isinstance(base_dir, Path):
         return base_dir
@@ -198,21 +226,26 @@ def _get_formatter_name(log_style):
     return PLAIN_FORMATTER
 
 
-def _build_formatters(include_request_id, log_format, log_colors):
+def _build_formatters(include_request_id, log_format, log_colors, json_fields, log_timezone):
     base_format = _validate_log_format(log_format)
     plain_format = base_format + REQUEST_ID_SUFFIX if include_request_id else base_format
+    normalized_log_timezone = _validate_log_timezone(log_timezone)
     return {
         COLOR_FORMATTER: {
             "()": "django_logkit.formatters.SafeColoredFormatter",
             "format": "%(log_color)s" + plain_format,
             "log_colors": _validate_log_colors(log_colors),
+            "log_timezone": normalized_log_timezone,
         },
         PLAIN_FORMATTER: {
             "()": "django_logkit.formatters.SafePlainFormatter",
             "format": plain_format,
+            "log_timezone": normalized_log_timezone,
         },
         JSON_FORMATTER: {
             "()": "django_logkit.formatters.JsonFormatter",
+            "json_fields": _validate_json_fields(json_fields),
+            "log_timezone": normalized_log_timezone,
         },
     }
 
@@ -298,6 +331,8 @@ def _build_logging_config(
     include_request_id=False,
     log_format=None,
     log_colors=None,
+    json_fields=None,
+    log_timezone=None,
 ):
     normalized_log_level = _validate_log_level(log_level)
     active_handlers = [CONSOLE_HANDLER]
@@ -320,6 +355,8 @@ def _build_logging_config(
             include_request_id=include_request_id,
             log_format=log_format,
             log_colors=log_colors,
+            json_fields=json_fields,
+            log_timezone=log_timezone,
         ),
         "handlers": _build_handlers(
             console_formatter=_get_formatter_name(console_style),
@@ -363,6 +400,8 @@ def get_logger_config_with_file(
     include_request_id=False,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
+    json_fields=None,
+    log_timezone=None,
 ):
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
@@ -378,6 +417,8 @@ def get_logger_config_with_file(
         include_request_id=include_request_id,
         log_format=log_format,
         log_colors=log_colors,
+        json_fields=json_fields,
+        log_timezone=log_timezone,
     )
 
 
@@ -389,6 +430,8 @@ def get_logger_config_without_file(
     include_request_id=False,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
+    json_fields=None,
+    log_timezone=None,
 ):
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
@@ -399,6 +442,8 @@ def get_logger_config_without_file(
         include_request_id=include_request_id,
         log_format=log_format,
         log_colors=log_colors,
+        json_fields=json_fields,
+        log_timezone=log_timezone,
     )
 
 
@@ -416,6 +461,8 @@ def get_logger_config(
     include_request_id=False,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
+    json_fields=None,
+    log_timezone=None,
 ):
     file_name = _resolve_file_logging(
         enable_file_logging=enable_file_logging,
@@ -435,4 +482,6 @@ def get_logger_config(
         include_request_id=include_request_id,
         log_format=log_format,
         log_colors=log_colors,
+        json_fields=json_fields,
+        log_timezone=log_timezone,
     )

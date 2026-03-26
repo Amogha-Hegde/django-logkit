@@ -62,6 +62,8 @@ LOGGING = get_logger_config(
     include_request_id=True,
     log_format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
     log_colors={"INFO": "green", "ERROR": "red"},
+    json_fields={"ts": "timestamp", "level": "levelname", "msg": "message", "rid": "request_id"},
+    log_timezone="UTC",
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",
@@ -85,6 +87,8 @@ Arguments:
 - `include_request_id`: adds request ID filter support to handlers
 - `log_format`: optional override for the plain/color formatter string
 - `log_colors`: optional override for color formatter level-to-color mapping
+- `json_fields`: optional override for JSON output fields as `{output_key: record_field_name}`
+- `log_timezone`: optional timezone applied to plain, color, and JSON timestamps; defaults to `UTC`, and also accepts values like `local` or `Asia/Kolkata`
 
 ## Logger Behavior
 
@@ -322,6 +326,76 @@ Optional service metadata can be added with environment variables:
 - `DJANGO_LOGKIT_ENVIRONMENT`
 
 If `orjson` is installed through the optional `json` extra, JSON logs are serialized with `orjson`. Otherwise the formatter falls back to Python's standard `json` module.
+
+By default the JSON formatter emits a fixed set of fields, but you can override that with `json_fields`.
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    console_style="json",
+    json_fields={
+        "ts": "timestamp",
+        "severity": "levelname",
+        "logger": "name",
+        "msg": "message",
+        "request_id": "request_id",
+    },
+    log_timezone="UTC",
+)
+```
+
+Supported dynamic field values include any standard `logging.LogRecord` attribute, plus:
+
+- `timestamp`
+- `message`
+- `hostname`
+- `request_id`
+
+Common examples from Python logging:
+
+- `name`
+- `levelno`
+- `levelname`
+- `pathname`
+- `filename`
+- `module`
+- `lineno`
+- `funcName`
+- `created`
+- `asctime`
+- `msecs`
+- `relativeCreated`
+- `thread`
+- `threadName`
+- `taskName`
+- `process`
+- `processName`
+
+For `json_fields`, use the raw field names above, not `%`-style placeholders.
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    console_style="json",
+    json_fields={
+        "logger": "name",
+        "level": "levelname",
+        "path": "pathname",
+        "line": "lineno",
+        "function": "funcName",
+        "time": "asctime",
+        "pid": "process",
+        "thread_name": "threadName",
+        "message": "message",
+        "request_id": "request_id",
+    },
+    log_timezone="Asia/Kolkata",
+)
+```
 
 ## Formatter Fields
 
