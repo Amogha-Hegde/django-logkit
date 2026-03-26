@@ -55,6 +55,7 @@ BASE_DIR = Path(__file__).resolve().parent
 LOGGING = get_logger_config(
     log_level="INFO",
     base_dir=BASE_DIR,
+    enable_file_logging=True,
     log_file_name="application.log",
     console_style="json",
     file_style="json",
@@ -73,6 +74,7 @@ Arguments:
 
 - `log_level`: default level for configured named loggers
 - `base_dir`: required when `log_file_name` is provided
+- `enable_file_logging`: explicitly enables or disables the file handler; if omitted, file logging is enabled only when `log_file_name` is provided
 - `log_file_name`: enables timed rotating file logging under `BASE_DIR/logs/`
 - `console_style`: `plain`, `color`, or `json`
 - `file_style`: `plain`, `color`, or `json`
@@ -176,6 +178,44 @@ Effective result:
 3. `logger_levels` can add more logger names and override levels for any configured logger.
 4. Any named logger without a specific `logger_levels` entry uses `log_level`.
 5. The root logger remains `WARNING`.
+
+## File Logging Behavior
+
+`get_logger_config(...)` supports both console-only and console+file logging.
+
+Console only:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    console_style="plain",
+    enable_file_logging=False,
+)
+```
+
+Console + file:
+
+```python
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+
+LOGGING = get_logger_config(
+    log_level="INFO",
+    base_dir=BASE_DIR,
+    enable_file_logging=True,
+    log_file_name="application.log",
+    console_style="json",
+    file_style="json",
+)
+```
+
+Rules:
+
+- if `enable_file_logging=False`, no file handler is created
+- if `enable_file_logging=True`, both `base_dir` and `log_file_name` are required
+- if `enable_file_logging` is omitted, file logging is enabled only when `log_file_name` is provided
+- file logs are written to `BASE_DIR/logs/<log_file_name>`
 
 Default `log_format`:
 
@@ -373,26 +413,21 @@ def some_task(self, order_id):
 ## Example `settings.py`
 
 ```python
-import os
 from pathlib import Path
 
 from django_logkit import get_logger_config
 
 BASE_DIR = Path(__file__).resolve().parent
 
-
-def get_bool_env(name, default="false"):
-    return os.environ.get(name, default).strip().lower() in {"1", "true", "yes", "on"}
-
-
 LOGGING = get_logger_config(
-    log_level=os.environ.get("LOGLEVEL", "INFO").upper(),
+    log_level="INFO",
     base_dir=BASE_DIR,
-    log_file_name=os.environ.get("LOG_FILE_NAME", "application.log") if get_bool_env("LOG_INTO_FILE") else None,
-    console_style=os.environ.get("LOG_CONSOLE_STYLE", "json"),
-    file_style=os.environ.get("LOG_FILE_STYLE", "json"),
-    include_request_id=get_bool_env("LOG_INCLUDE_REQUEST_ID", "true"),
-    log_format=os.environ.get("LOG_FORMAT") or None,
+    enable_file_logging=True,
+    log_file_name="application.log",
+    console_style="json",
+    file_style="json",
+    include_request_id=True,
+    log_format=None,
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",

@@ -133,6 +133,25 @@ def _validate_base_dir(base_dir):
     return Path(base_dir.strip())
 
 
+def _resolve_file_logging(enable_file_logging, base_dir, log_file_name):
+    if enable_file_logging is None:
+        enable_file_logging = log_file_name is not None
+
+    if not isinstance(enable_file_logging, bool):
+        raise ValueError("enable_file_logging must be a boolean")
+
+    if not enable_file_logging:
+        return None
+
+    if base_dir is None:
+        raise ValueError("base_dir is required when file logging is enabled")
+
+    if log_file_name is None:
+        raise ValueError("log_file_name is required when file logging is enabled")
+
+    return _build_log_file_path(base_dir=base_dir, log_file_name=log_file_name)
+
+
 def _normalize_logger_levels(default_level, logger_levels=None):
     normalized_levels = {}
 
@@ -387,6 +406,7 @@ def get_logger_config(
     log_level,
     base_dir=None,
     log_file_name=None,
+    enable_file_logging=None,
     console_style=DEFAULT_LOG_STYLE,
     file_style=DEFAULT_LOG_STYLE,
     log_backup=DEFAULT_LOG_BACKUP,
@@ -397,11 +417,11 @@ def get_logger_config(
     log_format=None,
     log_colors=None,
 ):
-    file_name = None
-    if log_file_name is not None:
-        if base_dir is None:
-            raise ValueError("base_dir is required when log_file_name is provided")
-        file_name = _build_log_file_path(base_dir=base_dir, log_file_name=log_file_name)
+    file_name = _resolve_file_logging(
+        enable_file_logging=enable_file_logging,
+        base_dir=base_dir,
+        log_file_name=log_file_name,
+    )
 
     return _build_logging_config(
         log_level=log_level,
