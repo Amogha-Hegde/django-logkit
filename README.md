@@ -84,6 +84,99 @@ Arguments:
 - `log_format`: optional override for the plain/color formatter string
 - `log_colors`: optional override for color formatter level-to-color mapping
 
+## Logger Behavior
+
+### `log_level`
+
+`log_level` is the default level applied to every named logger configured by `django-logkit`.
+
+That includes:
+
+- built-in logger names such as `celery`, `celery.task`, `django.request`, and `main`
+- any extra logger names added through `app_loggers`
+
+It does not change the root logger level. The root logger stays at `WARNING`.
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    app_loggers=["payments"],
+)
+```
+
+This makes these named loggers use `INFO` unless overridden:
+
+- `celery`
+- `celery.task`
+- `django.request`
+- `main`
+- `payments`
+
+### `app_loggers`
+
+`app_loggers` adds extra logger names to the configured logger set.
+
+Behavior:
+
+- entries are appended to the built-in default logger list
+- duplicate names are ignored
+- each added logger gets the same handlers as the rest of the configured named loggers
+- each added logger uses `log_level` unless overridden by `logger_levels`
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    app_loggers=["payments", "notifications", "payments"],
+)
+```
+
+Effective result:
+
+- `payments` is added once
+- `notifications` is added
+- both get the configured handlers and default to `INFO`
+
+### `logger_levels`
+
+`logger_levels` overrides the level for specific logger names.
+
+Behavior:
+
+- values in `logger_levels` take precedence over `log_level`
+- keys from `logger_levels` are also added to the configured logger set, even if they are not listed in `app_loggers`
+- this is the mechanism to tune noisy modules such as `django.db.backends`
+
+Example:
+
+```python
+LOGGING = get_logger_config(
+    log_level="INFO",
+    app_loggers=["payments"],
+    logger_levels={
+        "payments": "DEBUG",
+        "django.db.backends": "WARNING",
+    },
+)
+```
+
+Effective result:
+
+- built-in loggers still default to `INFO`
+- `payments` is configured and uses `DEBUG`
+- `django.db.backends` is configured and uses `WARNING`, even though it was not listed in `app_loggers`
+
+### Precedence Summary
+
+1. The package starts with the built-in logger names.
+2. `app_loggers` adds more logger names.
+3. `logger_levels` can add more logger names and override levels for any configured logger.
+4. Any named logger without a specific `logger_levels` entry uses `log_level`.
+5. The root logger remains `WARNING`.
+
 Default `log_format`:
 
 ```python
