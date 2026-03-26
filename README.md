@@ -427,7 +427,6 @@ LOGGING = get_logger_config(
     console_style="json",
     file_style="json",
     include_request_id=True,
-    log_format=None,
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",

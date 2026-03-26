@@ -361,8 +361,8 @@ def get_logger_config_with_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
-    log_format=None,
-    log_colors=None,
+    log_format=DEFAULT_LOG_FORMAT,
+    log_colors=DEFAULT_LOG_COLORS,
 ):
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
@@ -387,8 +387,8 @@ def get_logger_config_without_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
-    log_format=None,
-    log_colors=None,
+    log_format=DEFAULT_LOG_FORMAT,
+    log_colors=DEFAULT_LOG_COLORS,
 ):
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
@@ -414,8 +414,8 @@ def get_logger_config(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
-    log_format=None,
-    log_colors=None,
+    log_format=DEFAULT_LOG_FORMAT,
+    log_colors=DEFAULT_LOG_COLORS,
 ):
     file_name = _resolve_file_logging(
         enable_file_logging=enable_file_logging,

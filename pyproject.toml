@@ -23,6 +23,9 @@ color = [
 json = [
     "orjson>=3.10.0",
 ]
+test = [
+    "pytest>=8.0.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["django_logkit*"]
