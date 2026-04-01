@@ -10,11 +10,9 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
-    { name = "Amogha" },
+    { name = "Amogha Hegde" },
 ]
-dependencies = [
-    "Django>=4.2",
-]
+dependencies = []
 
 [project.optional-dependencies]
 color = [
