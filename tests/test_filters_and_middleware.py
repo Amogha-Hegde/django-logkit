@@ -25,6 +25,22 @@ def test_request_id_filter_uses_dash_when_missing():
     assert record.request_id == "-"
 
 
+def test_request_id_filter_uses_request_attribute_when_context_missing():
+    record = SimpleNamespace(request=SimpleNamespace(request_id="req-3"))
+
+    RequestIdFilter().filter(record)
+
+    assert record.request_id == "req-3"
+
+
+def test_request_id_filter_uses_request_meta_header_when_context_missing():
+    record = SimpleNamespace(request=SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-4"}))
+
+    RequestIdFilter().filter(record)
+
+    assert record.request_id == "req-4"
+
+
 class DummyResponse(dict):
     pass
 

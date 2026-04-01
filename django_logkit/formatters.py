@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import socket
 import warnings
 from datetime import datetime, timezone
@@ -25,6 +26,8 @@ DEFAULT_JSON_FIELDS = {
     "thread": "thread",
     "request_id": "request_id",
 }
+DJANGO_SERVER_LOGGER = "django.server"
+DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
 
 
 def _strip_color_fields(fmt):
@@ -112,12 +115,29 @@ class JsonFormatter(logging.Formatter):
         if field_name == "asctime":
             return self.formatTime(record, self.datefmt)
         if field_name == "message":
-            return record.getMessage()
+            return self._resolve_message(record)
         if field_name == "hostname":
             return socket.gethostname()
         if field_name == "request_id":
             return getattr(record, "request_id", None)
         return getattr(record, field_name, None)
+
+    def _parse_django_server_message(self, record):
+        if record.name != DJANGO_SERVER_LOGGER:
+            return None
+
+        message = record.getMessage()
+        match = DJANGO_SERVER_MESSAGE_PATTERN.match(message)
+        if not match:
+            return None
+
+        return match.groupdict()
+
+    def _resolve_message(self, record):
+        parsed_message = self._parse_django_server_message(record)
+        if parsed_message is not None:
+            return parsed_message["request_line"]
+        return record.getMessage()
 
     def formatTime(self, record, datefmt=None):
         dt = datetime.fromtimestamp(record.created, tz=self.log_timezone)
@@ -131,6 +151,13 @@ class JsonFormatter(logging.Formatter):
             value = self._resolve_field_value(record, field_name)
             if value is not None:
                 payload[output_key] = value
+
+        parsed_message = self._parse_django_server_message(record)
+        if parsed_message is not None:
+            payload["request_line"] = parsed_message["request_line"]
+            payload["status_code"] = int(parsed_message["status_code"])
+            response_size = parsed_message["response_size"]
+            payload["response_size"] = None if response_size == "-" else int(response_size)
 
         service_name = os.getenv("DJANGO_LOGKIT_SERVICE_NAME")
         environment = os.getenv("DJANGO_LOGKIT_ENVIRONMENT")

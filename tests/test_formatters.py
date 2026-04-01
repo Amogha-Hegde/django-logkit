@@ -183,3 +183,29 @@ def test_json_formatter_includes_exception(monkeypatch):
 
     assert '"exception":' in rendered
     assert "ValueError: boom" in rendered
+
+
+def test_json_formatter_parses_django_server_access_log(monkeypatch):
+    formatter = formatters.JsonFormatter()
+    monkeypatch.setattr(formatters, "orjson", None)
+    monkeypatch.setattr(formatters.socket, "gethostname", lambda: "app-worker-01")
+
+    record = logging.LogRecord(
+        name="django.server",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=213,
+        msg='"%s" %s %s',
+        args=("GET /api/health/ HTTP/1.1", "200", "15"),
+        exc_info=None,
+        func="log_message",
+    )
+    record.request_id = "req-5"
+
+    rendered = formatter.format(record)
+
+    assert '"message": "GET /api/health/ HTTP/1.1"' in rendered
+    assert '"request_line": "GET /api/health/ HTTP/1.1"' in rendered
+    assert '"status_code": 200' in rendered
+    assert '"response_size": 15' in rendered
+    assert '\\"GET /api/health/ HTTP/1.1\\" 200 15' not in rendered
