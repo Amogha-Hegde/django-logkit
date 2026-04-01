@@ -53,6 +53,24 @@ def test_safe_colored_formatter_falls_back_without_colorlog(monkeypatch):
     assert formatter.format(record) == "hello [-]"
 
 
+def test_safe_colored_formatter_strips_log_color_field_when_falling_back(monkeypatch):
+    original_import = __import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "colorlog":
+            raise ImportError("missing colorlog")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with pytest.warns(RuntimeWarning, match="colorlog is not installed"):
+        formatter = formatters.SafeColoredFormatter("%(log_color)s%(message)s [%(request_id)s]")
+
+    record = make_record()
+
+    assert formatter.format(record) == "hello [-]"
+
+
 def test_safe_colored_formatter_uses_colorlog_when_available(monkeypatch):
     class DummyColoredFormatter:
         def __init__(self, **kwargs):

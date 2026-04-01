@@ -27,6 +27,12 @@ DEFAULT_JSON_FIELDS = {
 }
 
 
+def _strip_color_fields(fmt):
+    if fmt is None:
+        return None
+    return fmt.replace("%(log_color)s", "")
+
+
 def _resolve_timezone(log_timezone):
     if log_timezone is None:
         return timezone.utc
@@ -72,7 +78,7 @@ class SafeColoredFormatter(SafePlainFormatter):
                 stacklevel=2,
             )
             self._formatter = SafePlainFormatter(
-                fmt=fmt,
+                fmt=_strip_color_fields(fmt),
                 datefmt=datefmt,
                 style=style,
                 validate=validate,
