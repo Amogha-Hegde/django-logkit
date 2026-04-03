@@ -284,6 +284,8 @@ MIDDLEWARE = [
 
 Yes, you need to register the middleware in your Django `MIDDLEWARE` setting if you want automatic request-scoped values.
 
+Register it once. If the same middleware is added multiple times, you can get duplicate request / response logs or mismatched request IDs. The middleware now guards against accidental double application on the same request, but it should still appear only once in `MIDDLEWARE`.
+
 Without the middleware:
 
 - `request_id` is not generated automatically

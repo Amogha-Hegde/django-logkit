@@ -50,6 +50,7 @@ LOG_FLAG_ENV_VARS = {
 }
 REQUEST_LOGGER_ENV_VAR = "DJANGO_LOGKIT_REQUEST_LOGGER"
 BODY_MAX_LENGTH_ENV_VAR = "DJANGO_LOGKIT_BODY_MAX_LENGTH"
+REQUEST_GUARD_ATTR = "_django_logkit_request_middleware_applied"
 
 
 def _get_env_flag(env_var, default=False):
@@ -186,6 +187,13 @@ class RequestIdMiddleware:
                 self.request_logger.debug(body)
 
     def __call__(self, request):
+        if getattr(request, REQUEST_GUARD_ATTR, False):
+            response = self.get_response(request)
+            if hasattr(request, "request_id") and self.response_header_name not in response:
+                response[self.response_header_name] = request.request_id
+            return response
+
+        setattr(request, REQUEST_GUARD_ATTR, True)
         clear_pending_server_log_context()
         started_at = perf_counter()
         request_id = request.META.get(self.header_name) or str(uuid4())

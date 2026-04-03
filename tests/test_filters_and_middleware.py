@@ -292,3 +292,33 @@ def test_request_id_middleware_logs_request_response_when_enabled(monkeypatch):
     assert logger.calls[2] == ("debug", '{"ok":true}')
     assert logger.calls[3][1]["Set-Cookie"] == "[REDACTED]"
     assert logger.calls[4] == ("debug", '{"status":"up"}')
+
+
+def test_request_id_middleware_is_idempotent_when_wrapped_twice(monkeypatch):
+    class DummyLogger:
+        def __init__(self):
+            self.calls = []
+
+        def info(self, message, *args):
+            self.calls.append(("info", message % args))
+
+        def debug(self, payload):
+            self.calls.append(("debug", payload))
+
+    logger = DummyLogger()
+    times = iter([50.0, 50.010])
+    original_get_logger = middleware_module.logging.getLogger
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module.logging, "getLogger", lambda name=None: logger if name == "django.request" else original_get_logger(name))
+    monkeypatch.setattr(middleware_module, "uuid4", lambda: "req-20")
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_REQUESTS", "true")
+    request = SimpleNamespace(META={}, method="GET", path="/api/health/", get_full_path=lambda: "/api/health/")
+
+    inner = RequestIdMiddleware(lambda incoming_request: DummyResponse())
+    outer = RequestIdMiddleware(inner)
+
+    response = outer(request)
+
+    assert request.request_id == "req-20"
+    assert response["X-Request-ID"] == "req-20"
+    assert logger.calls == [("info", "GET /api/health/ - -")]
