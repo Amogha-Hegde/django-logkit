@@ -51,6 +51,11 @@ LOG_FLAG_ENV_VARS = {
 REQUEST_LOGGER_ENV_VAR = "DJANGO_LOGKIT_REQUEST_LOGGER"
 BODY_MAX_LENGTH_ENV_VAR = "DJANGO_LOGKIT_BODY_MAX_LENGTH"
 REQUEST_GUARD_ATTR = "_django_logkit_request_middleware_applied"
+REQUEST_SUMMARY_EVENT = "request_summary"
+REQUEST_HEADERS_EVENT = "request_headers"
+RESPONSE_HEADERS_EVENT = "response_headers"
+REQUEST_BODY_EVENT = "request_body"
+RESPONSE_BODY_EVENT = "response_body"
 
 
 def _get_env_flag(env_var, default=False):
@@ -170,21 +175,64 @@ class RequestIdMiddleware:
     def _log_request_response(self, request, response):
         path = getattr(request, "get_full_path", lambda: getattr(request, "path", "/"))()
         method = getattr(request, "method", "GET")
+        status_code = getattr(response, "status_code", "-")
 
         if self.log_request_summary:
-            self.request_logger.info("%s %s - %s", method, path, getattr(response, "status_code", "-"))
+            self.request_logger.info(
+                REQUEST_SUMMARY_EVENT,
+                extra={
+                    "event": REQUEST_SUMMARY_EVENT,
+                    "method": method,
+                    "path": path,
+                    "status_code": status_code,
+                },
+            )
         if self.log_request_headers:
-            self.request_logger.debug(_extract_request_headers(request))
+            self.request_logger.debug(
+                REQUEST_HEADERS_EVENT,
+                extra={
+                    "event": REQUEST_HEADERS_EVENT,
+                    "headers": _extract_request_headers(request),
+                    "method": method,
+                    "path": path,
+                },
+            )
         if self.log_request_body:
             body = _extract_request_body(request, self.body_max_length)
             if body is not None:
-                self.request_logger.debug(body)
+                self.request_logger.debug(
+                    REQUEST_BODY_EVENT,
+                    extra={
+                        "event": REQUEST_BODY_EVENT,
+                        "body": body,
+                        "method": method,
+                        "path": path,
+                    },
+                )
         if self.log_response_headers:
-            self.request_logger.debug(_extract_response_headers(response))
+            self.request_logger.debug(
+                RESPONSE_HEADERS_EVENT,
+                extra={
+                    "event": RESPONSE_HEADERS_EVENT,
+                    "headers": _extract_response_headers(response),
+                    "method": method,
+                    "path": path,
+                    "status_code": status_code,
+                },
+            )
         if self.log_response_body:
             body = _extract_response_body(response, self.body_max_length)
             if body is not None:
-                self.request_logger.debug(body)
+                self.request_logger.debug(
+                    RESPONSE_BODY_EVENT,
+                    extra={
+                        "event": RESPONSE_BODY_EVENT,
+                        "body": body,
+                        "method": method,
+                        "path": path,
+                        "status_code": status_code,
+                    },
+                )
 
     def __call__(self, request):
         if getattr(request, REQUEST_GUARD_ATTR, False):

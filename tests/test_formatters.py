@@ -91,6 +91,11 @@ def test_safe_colored_formatter_uses_colorlog_when_available(monkeypatch):
 def test_json_formatter_uses_json_fallback(monkeypatch):
     formatter = formatters.JsonFormatter()
     record = make_record("invoice created")
+    record.event = "request_summary"
+    record.method = "GET"
+    record.path = "/api/health/"
+    record.headers = {"Host": "localhost:8000"}
+    record.body = '{"ok":true}'
     record.request_id = "req-1"
     record.trace_id = "trace-1"
     record.span_id = "span-1"
@@ -105,6 +110,11 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     rendered = formatter.format(record)
 
     assert '"logger": "payments.service"' in rendered
+    assert '"event": "request_summary"' in rendered
+    assert '"method": "GET"' in rendered
+    assert '"path": "/api/health/"' in rendered
+    assert '"headers": {"Host": "localhost:8000"}' in rendered
+    assert '"body": "{\\"ok\\":true}"' in rendered
     assert '"request_id": "req-1"' in rendered
     assert '"trace_id": "trace-1"' in rendered
     assert '"span_id": "span-1"' in rendered

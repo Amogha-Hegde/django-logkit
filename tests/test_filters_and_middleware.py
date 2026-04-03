@@ -253,11 +253,11 @@ def test_request_id_middleware_logs_request_response_when_enabled(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        def info(self, message, *args):
-            self.calls.append(("info", message % args))
+        def info(self, message, *args, **kwargs):
+            self.calls.append(("info", message, kwargs.get("extra", {})))
 
-        def debug(self, payload):
-            self.calls.append(("debug", payload))
+        def debug(self, message, *args, **kwargs):
+            self.calls.append(("debug", message, kwargs.get("extra", {})))
 
     logger = DummyLogger()
     times = iter([40.0, 40.018])
@@ -286,12 +286,26 @@ def test_request_id_middleware_logs_request_response_when_enabled(monkeypatch):
 
     RequestIdMiddleware(lambda incoming_request: response)(request)
 
-    assert logger.calls[0] == ("info", "GET /api/health/?verbose=1 - 200")
+    assert logger.calls[0] == (
+        "info",
+        "request_summary",
+        {"event": "request_summary", "method": "GET", "path": "/api/health/?verbose=1", "status_code": 200},
+    )
     assert logger.calls[1][0] == "debug"
-    assert logger.calls[1][1]["Authorization"] == "[REDACTED]"
-    assert logger.calls[2] == ("debug", '{"ok":true}')
-    assert logger.calls[3][1]["Set-Cookie"] == "[REDACTED]"
-    assert logger.calls[4] == ("debug", '{"status":"up"}')
+    assert logger.calls[1][1] == "request_headers"
+    assert logger.calls[1][2]["headers"]["Authorization"] == "[REDACTED]"
+    assert logger.calls[2] == (
+        "debug",
+        "request_body",
+        {"event": "request_body", "body": '{"ok":true}', "method": "GET", "path": "/api/health/?verbose=1"},
+    )
+    assert logger.calls[3][1] == "response_headers"
+    assert logger.calls[3][2]["headers"]["Set-Cookie"] == "[REDACTED]"
+    assert logger.calls[4] == (
+        "debug",
+        "response_body",
+        {"event": "response_body", "body": '{"status":"up"}', "method": "GET", "path": "/api/health/?verbose=1", "status_code": 200},
+    )
 
 
 def test_request_id_middleware_is_idempotent_when_wrapped_twice(monkeypatch):
@@ -299,11 +313,11 @@ def test_request_id_middleware_is_idempotent_when_wrapped_twice(monkeypatch):
         def __init__(self):
             self.calls = []
 
-        def info(self, message, *args):
-            self.calls.append(("info", message % args))
+        def info(self, message, *args, **kwargs):
+            self.calls.append(("info", message, kwargs.get("extra", {})))
 
-        def debug(self, payload):
-            self.calls.append(("debug", payload))
+        def debug(self, message, *args, **kwargs):
+            self.calls.append(("debug", message, kwargs.get("extra", {})))
 
     logger = DummyLogger()
     times = iter([50.0, 50.010])
@@ -321,4 +335,4 @@ def test_request_id_middleware_is_idempotent_when_wrapped_twice(monkeypatch):
 
     assert request.request_id == "req-20"
     assert response["X-Request-ID"] == "req-20"
-    assert logger.calls == [("info", "GET /api/health/ - -")]
+    assert logger.calls == [("info", "request_summary", {"event": "request_summary", "method": "GET", "path": "/api/health/", "status_code": "-"})]

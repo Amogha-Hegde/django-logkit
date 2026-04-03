@@ -383,8 +383,17 @@ Behavior:
 - each log type can be enabled independently
 - the summary log is emitted at `INFO`
 - headers and bodies are emitted at `DEBUG`
+- middleware-emitted logs include an `event` field so request and response logs can be distinguished reliably
 - sensitive headers are redacted by default: `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `Proxy-Authorization`
 - you can override the redacted header list with `DJANGO_LOGKIT_REDACT_HEADERS` as a comma-separated list
+
+Request / response log events:
+
+- `request_summary`
+- `request_headers`
+- `response_headers`
+- `request_body`
+- `response_body`
 
 ## Threads And Executors
 
@@ -430,12 +439,17 @@ When `console_style="json"` or `file_style="json"`, logs are emitted as JSON wit
 - `level`
 - `hostname`
 - `logger`
+- `event`
 - `message`
 - `module`
 - `function`
 - `line`
 - `process`
 - `thread`
+- `method`
+- `path`
+- `headers`
+- `body`
 - `request_id`
 - `trace_id`
 - `span_id`
@@ -475,6 +489,11 @@ Supported dynamic field values include any standard `logging.LogRecord` attribut
 - `timestamp`
 - `message`
 - `hostname`
+- `event`
+- `method`
+- `path`
+- `headers`
+- `body`
 - `request_id`
 - `trace_id`
 - `span_id`
@@ -588,7 +607,7 @@ Color console output uses the same structure as plain output, with ANSI color ap
 JSON output:
 
 ```json
-{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "message": "invoice created", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "request_id": "req-123", "trace_id": "trace-123", "span_id": "span-123", "user_id": "user-42", "tenant": "tenant-acme", "duration_ms": 18, "service": "billing-api", "environment": "production"}
+{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "event": "request_summary", "message": "request_summary", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "method": "GET", "path": "/api/health/", "request_id": "req-123", "trace_id": "trace-123", "span_id": "span-123", "user_id": "user-42", "tenant": "tenant-acme", "duration_ms": 18, "service": "billing-api", "environment": "production"}
 ```
 
 ## Celery Notes
