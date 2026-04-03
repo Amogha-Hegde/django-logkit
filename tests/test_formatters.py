@@ -92,6 +92,11 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     formatter = formatters.JsonFormatter()
     record = make_record("invoice created")
     record.request_id = "req-1"
+    record.trace_id = "trace-1"
+    record.span_id = "span-1"
+    record.user_id = "user-1"
+    record.tenant = "tenant-1"
+    record.duration_ms = 42
     monkeypatch.setattr(formatters, "orjson", None)
     monkeypatch.setenv("DJANGO_LOGKIT_SERVICE_NAME", "billing-api")
     monkeypatch.setenv("DJANGO_LOGKIT_ENVIRONMENT", "production")
@@ -101,6 +106,11 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
 
     assert '"logger": "payments.service"' in rendered
     assert '"request_id": "req-1"' in rendered
+    assert '"trace_id": "trace-1"' in rendered
+    assert '"span_id": "span-1"' in rendered
+    assert '"user_id": "user-1"' in rendered
+    assert '"tenant": "tenant-1"' in rendered
+    assert '"duration_ms": 42' in rendered
     assert '"service": "billing-api"' in rendered
     assert '"environment": "production"' in rendered
     assert '"hostname": "app-worker-01"' in rendered
@@ -130,10 +140,14 @@ def test_json_formatter_supports_dynamic_json_fields(monkeypatch):
             "time": "asctime",
             "msg": "message",
             "rid": "request_id",
+            "latency_ms": "duration_ms",
+            "tenant_key": "tenant",
         }
     )
     record = make_record("invoice created")
     record.request_id = "req-2"
+    record.duration_ms = 9
+    record.tenant = "tenant-2"
     monkeypatch.setattr(formatters, "orjson", None)
 
     rendered = formatter.format(record)
@@ -144,6 +158,8 @@ def test_json_formatter_supports_dynamic_json_fields(monkeypatch):
     assert '"time":' in rendered
     assert '"msg": "invoice created"' in rendered
     assert '"rid": "req-2"' in rendered
+    assert '"latency_ms": 9' in rendered
+    assert '"tenant_key": "tenant-2"' in rendered
     assert '"message":' not in rendered
 
 

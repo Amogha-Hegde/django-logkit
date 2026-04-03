@@ -25,6 +25,11 @@ DEFAULT_JSON_FIELDS = {
     "process": "process",
     "thread": "thread",
     "request_id": "request_id",
+    "trace_id": "trace_id",
+    "span_id": "span_id",
+    "user_id": "user_id",
+    "tenant": "tenant",
+    "duration_ms": "duration_ms",
 }
 DJANGO_SERVER_LOGGER = "django.server"
 DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
@@ -66,6 +71,16 @@ class SafePlainFormatter(logging.Formatter):
     def format(self, record):
         if not hasattr(record, "request_id"):
             record.request_id = "-"
+        if not hasattr(record, "trace_id"):
+            record.trace_id = "-"
+        if not hasattr(record, "span_id"):
+            record.span_id = "-"
+        if not hasattr(record, "user_id"):
+            record.user_id = None
+        if not hasattr(record, "tenant"):
+            record.tenant = None
+        if not hasattr(record, "duration_ms"):
+            record.duration_ms = None
         return super().format(record)
 
 
@@ -100,6 +115,16 @@ class SafeColoredFormatter(SafePlainFormatter):
     def format(self, record):
         if not hasattr(record, "request_id"):
             record.request_id = "-"
+        if not hasattr(record, "trace_id"):
+            record.trace_id = "-"
+        if not hasattr(record, "span_id"):
+            record.span_id = "-"
+        if not hasattr(record, "user_id"):
+            record.user_id = None
+        if not hasattr(record, "tenant"):
+            record.tenant = None
+        if not hasattr(record, "duration_ms"):
+            record.duration_ms = None
         return self._formatter.format(record)
 
 

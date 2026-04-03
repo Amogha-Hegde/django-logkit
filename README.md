@@ -33,12 +33,15 @@ from pathlib import Path
 
 from django_logkit import (
     RequestIdMiddleware,
+    bind_log_context,
     bind_request_id,
     bind_request_id_from_task,
     build_celery_headers,
+    get_log_context,
     get_logger_config,
     get_logger_config_with_file,
     get_logger_config_without_file,
+    wrap_with_log_context,
     wrap_with_request_id,
 )
 
@@ -268,9 +271,9 @@ LOGGING = get_logger_config_with_file(
 )
 ```
 
-## Request ID Middleware
+## Request Context Middleware
 
-Add the middleware if you want request-scoped IDs in logs:
+Add the middleware if you want request-scoped log context in logs:
 
 ```python
 MIDDLEWARE = [
@@ -279,16 +282,55 @@ MIDDLEWARE = [
 ]
 ```
 
-The middleware reads `X-Request-ID` if present, otherwise generates one, stores it in a context variable, and writes it back to the response header.
+The middleware supports these request-scoped fields:
+
+- `request_id`
+- `trace_id`
+- `span_id`
+- `user_id`
+- `tenant`
+- `duration_ms`
+
+Behavior:
+
+- `request_id` is read from the configured request header if present, otherwise generated automatically
+- `trace_id`, `span_id`, and `tenant` are read from configured request headers when present
+- `user_id` is resolved from `request.user_id` or `request.user.pk` / `request.user.id` when available
+- `duration_ms` is measured automatically for the request lifecycle
+- every field is optional; you can use any one of them without the others
+- the request ID is written back to the response header using the configured request ID header name
+
+Default request header names:
+
+- `HTTP_X_REQUEST_ID`
+- `HTTP_X_TRACE_ID`
+- `HTTP_X_SPAN_ID`
+- `HTTP_X_TENANT`
+
+Environment variable overrides:
+
+- `DJANGO_LOGKIT_REQUEST_ID_HEADER`
+- `DJANGO_LOGKIT_TRACE_ID_HEADER`
+- `DJANGO_LOGKIT_SPAN_ID_HEADER`
+- `DJANGO_LOGKIT_TENANT_HEADER`
+
+Example:
+
+```bash
+export DJANGO_LOGKIT_REQUEST_ID_HEADER=HTTP_X_CORRELATION_ID
+export DJANGO_LOGKIT_TRACE_ID_HEADER=HTTP_X_B3_TRACE_ID
+export DJANGO_LOGKIT_SPAN_ID_HEADER=HTTP_X_B3_SPAN_ID
+export DJANGO_LOGKIT_TENANT_HEADER=HTTP_X_ACCOUNT
+```
 
 ## Threads And Executors
 
-For threads or executors, bind the request ID explicitly:
+For threads, executors, background jobs, or standalone log enrichment, bind only the fields you need:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
 
-from django_logkit import bind_request_id, wrap_with_request_id
+from django_logkit import bind_log_context, bind_request_id, wrap_with_log_context, wrap_with_request_id
 
 
 def do_work(order_id):
@@ -301,6 +343,20 @@ with bind_request_id("req-123"):
 
 executor = ThreadPoolExecutor(max_workers=4)
 executor.submit(wrap_with_request_id(do_work), 2)
+
+
+with bind_log_context(trace_id="trace-123"):
+    logger.info("trace-only log")
+
+
+with bind_log_context(duration_ms=18):
+    logger.info("duration-only log")
+
+
+executor.submit(
+    wrap_with_log_context(do_work, tenant="tenant-acme", user_id="user-42"),
+    3,
+)
 ```
 
 ## JSON Logging
@@ -318,6 +374,11 @@ When `console_style="json"` or `file_style="json"`, logs are emitted as JSON wit
 - `process`
 - `thread`
 - `request_id`
+- `trace_id`
+- `span_id`
+- `user_id`
+- `tenant`
+- `duration_ms`
 - `exception`
 
 Optional service metadata can be added with environment variables:
@@ -352,6 +413,11 @@ Supported dynamic field values include any standard `logging.LogRecord` attribut
 - `message`
 - `hostname`
 - `request_id`
+- `trace_id`
+- `span_id`
+- `user_id`
+- `tenant`
+- `duration_ms`
 
 Common examples from Python logging:
 
@@ -423,6 +489,11 @@ For `log_format`, you can use standard Python `logging` record attributes such a
 Custom field added by `django-logkit`:
 
 - `%(request_id)s`
+- `%(trace_id)s`
+- `%(span_id)s`
+- `%(user_id)s`
+- `%(tenant)s`
+- `%(duration_ms)s`
 
 Example:
 
@@ -454,7 +525,7 @@ Color console output uses the same structure as plain output, with ANSI color ap
 JSON output:
 
 ```json
-{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "message": "invoice created", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "request_id": "req-123", "service": "billing-api", "environment": "production"}
+{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "message": "invoice created", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "request_id": "req-123", "trace_id": "trace-123", "span_id": "span-123", "user_id": "user-42", "tenant": "tenant-acme", "duration_ms": 18, "service": "billing-api", "environment": "production"}
 ```
 
 ## Celery Notes

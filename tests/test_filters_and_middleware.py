@@ -1,8 +1,9 @@
 from types import SimpleNamespace
 
+import django_logkit.middleware as middleware_module
 from django_logkit.filters import RequestIdFilter
 from django_logkit.middleware import RequestIdMiddleware
-from django_logkit.request_id import get_request_id, set_request_id, reset_request_id
+from django_logkit.request_id import get_log_context, get_request_id, reset_request_id, set_request_id
 
 
 def test_request_id_filter_sets_record_value():
@@ -17,53 +18,152 @@ def test_request_id_filter_sets_record_value():
     assert record.request_id == "req-1"
 
 
-def test_request_id_filter_uses_dash_when_missing():
+def test_request_id_filter_uses_defaults_when_missing():
     record = SimpleNamespace()
 
     RequestIdFilter().filter(record)
 
     assert record.request_id == "-"
+    assert record.trace_id == "-"
+    assert record.span_id == "-"
+    assert record.user_id is None
+    assert record.tenant is None
+    assert record.duration_ms is None
 
 
 def test_request_id_filter_uses_request_attribute_when_context_missing():
-    record = SimpleNamespace(request=SimpleNamespace(request_id="req-3"))
+    record = SimpleNamespace(
+        request=SimpleNamespace(
+            request_id="req-3",
+            trace_id="trace-3",
+            span_id="span-3",
+            user_id="user-3",
+            tenant="tenant-3",
+            duration_ms=45,
+        )
+    )
 
     RequestIdFilter().filter(record)
 
     assert record.request_id == "req-3"
+    assert record.trace_id == "trace-3"
+    assert record.span_id == "span-3"
+    assert record.user_id == "user-3"
+    assert record.tenant == "tenant-3"
+    assert record.duration_ms == 45
 
 
 def test_request_id_filter_uses_request_meta_header_when_context_missing():
-    record = SimpleNamespace(request=SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-4"}))
+    record = SimpleNamespace(
+        request=SimpleNamespace(
+            META={
+                "HTTP_X_REQUEST_ID": "req-4",
+                "HTTP_X_TENANT": "tenant-4",
+            }
+        )
+    )
 
     RequestIdFilter().filter(record)
 
     assert record.request_id == "req-4"
+    assert record.tenant == "tenant-4"
 
 
 class DummyResponse(dict):
     pass
 
 
-def test_request_id_middleware_uses_existing_header():
-    request = SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-2"})
+def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypatch):
+    times = iter([100.0, 100.125])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+
+    request = SimpleNamespace(
+        META={
+            "HTTP_X_REQUEST_ID": "req-2",
+            "HTTP_X_TRACE_ID": "trace-2",
+            "HTTP_X_SPAN_ID": "span-2",
+            "HTTP_X_TENANT": "tenant-2",
+        },
+        user=SimpleNamespace(is_authenticated=True, pk="user-2"),
+    )
 
     def get_response(incoming_request):
         assert incoming_request.request_id == "req-2"
+        assert incoming_request.trace_id == "trace-2"
+        assert incoming_request.span_id == "span-2"
+        assert incoming_request.user_id == "user-2"
+        assert incoming_request.tenant == "tenant-2"
         assert get_request_id() == "req-2"
+        assert get_log_context()["trace_id"] == "trace-2"
         return DummyResponse()
 
     response = RequestIdMiddleware(get_response)(request)
 
     assert response["X-Request-ID"] == "req-2"
+    assert request.duration_ms == 125
     assert get_request_id() is None
+    assert get_log_context()["trace_id"] is None
 
 
-def test_request_id_middleware_generates_header_when_missing():
+def test_request_id_middleware_generates_header_when_missing(monkeypatch):
+    times = iter([10.0, 10.015])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module, "uuid4", lambda: "generated-id")
     request = SimpleNamespace(META={})
 
     response = RequestIdMiddleware(lambda incoming_request: DummyResponse())(request)
 
-    assert "X-Request-ID" in response
-    assert request.request_id == response["X-Request-ID"]
+    assert response["X-Request-ID"] == "generated-id"
+    assert request.request_id == "generated-id"
+    assert request.duration_ms == 15
     assert get_request_id() is None
+
+
+def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
+    monkeypatch.setenv("DJANGO_LOGKIT_REQUEST_ID_HEADER", "HTTP_X_CORRELATION_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_TRACE_ID_HEADER", "HTTP_X_B3_TRACE_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_SPAN_ID_HEADER", "HTTP_X_B3_SPAN_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_TENANT_HEADER", "HTTP_X_ACCOUNT")
+    record = SimpleNamespace(
+        request=SimpleNamespace(
+            META={
+                "HTTP_X_CORRELATION_ID": "req-9",
+                "HTTP_X_B3_TRACE_ID": "trace-9",
+                "HTTP_X_B3_SPAN_ID": "span-9",
+                "HTTP_X_ACCOUNT": "tenant-9",
+            }
+        )
+    )
+
+    RequestIdFilter().filter(record)
+
+    assert record.request_id == "req-9"
+    assert record.trace_id == "trace-9"
+    assert record.span_id == "span-9"
+    assert record.tenant == "tenant-9"
+
+
+def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
+    times = iter([20.0, 20.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setenv("DJANGO_LOGKIT_REQUEST_ID_HEADER", "HTTP_X_CORRELATION_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_TRACE_ID_HEADER", "HTTP_X_B3_TRACE_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_SPAN_ID_HEADER", "HTTP_X_B3_SPAN_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_TENANT_HEADER", "HTTP_X_ACCOUNT")
+    request = SimpleNamespace(
+        META={
+            "HTTP_X_CORRELATION_ID": "req-10",
+            "HTTP_X_B3_TRACE_ID": "trace-10",
+            "HTTP_X_B3_SPAN_ID": "span-10",
+            "HTTP_X_ACCOUNT": "tenant-10",
+        }
+    )
+
+    response = RequestIdMiddleware(lambda incoming_request: DummyResponse())(request)
+
+    assert request.request_id == "req-10"
+    assert request.trace_id == "trace-10"
+    assert request.span_id == "span-10"
+    assert request.tenant == "tenant-10"
+    assert request.duration_ms == 10
+    assert response["X-Correlation-ID"] == "req-10"
