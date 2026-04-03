@@ -36,6 +36,20 @@ def test_safe_plain_formatter_uses_configured_timezone():
     assert formatter.format(record).startswith("1970-01-01 00:00:00.000+00:00 hello")
 
 
+def test_safe_plain_formatter_renders_structured_event_message():
+    formatter = formatters.SafePlainFormatter("%(message)s [%(request_id)s]")
+    record = make_record("ignored")
+    record.event = "response_headers"
+    record.path = "/api/health/"
+    record.status_code = 500
+    record.headers = {"Content-Type": "application/json"}
+    record.request_id = "req-1"
+
+    rendered = formatter.format(record)
+
+    assert rendered == "response_headers path=/api/health/ status_code=500 headers={'Content-Type': 'application/json'} [req-1]"
+
+
 def test_safe_colored_formatter_falls_back_without_colorlog(monkeypatch):
     original_import = __import__
 
@@ -86,6 +100,29 @@ def test_safe_colored_formatter_uses_colorlog_when_available(monkeypatch):
     record = make_record()
 
     assert formatter.format(record) == "colored:hello:-"
+
+
+def test_safe_colored_formatter_renders_structured_event_when_colorlog_available(monkeypatch):
+    class DummyColoredFormatter:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def format(self, record):
+            return record.getMessage()
+
+    dummy_module = types.SimpleNamespace(ColoredFormatter=DummyColoredFormatter)
+    monkeypatch.setitem(sys.modules, "colorlog", dummy_module)
+
+    formatter = formatters.SafeColoredFormatter("%(message)s")
+    record = make_record("ignored")
+    record.event = "request_summary"
+    record.method = "GET"
+    record.path = "/api/health/"
+    record.status_code = 200
+
+    rendered = formatter.format(record)
+
+    assert rendered == "request_summary method=GET path=/api/health/ status_code=200"
 
 
 def test_json_formatter_uses_json_fallback(monkeypatch):

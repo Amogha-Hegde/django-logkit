@@ -38,6 +38,7 @@ DEFAULT_JSON_FIELDS = {
 }
 DJANGO_SERVER_LOGGER = "django.server"
 DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
+STRUCTURED_EVENT_FIELDS = ("event", "method", "path", "status_code", "headers", "body")
 
 
 def _strip_color_fields(fmt):
@@ -62,6 +63,19 @@ def _resolve_timezone(log_timezone):
     return ZoneInfo(normalized_log_timezone)
 
 
+def _format_structured_event_message(record):
+    event = getattr(record, "event", None)
+    if not event:
+        return None
+
+    parts = [event]
+    for field_name in STRUCTURED_EVENT_FIELDS[1:]:
+        value = getattr(record, field_name, None)
+        if value is not None:
+            parts.append(f"{field_name}={value}")
+    return " ".join(parts)
+
+
 class SafePlainFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_timezone=None):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
@@ -72,6 +86,21 @@ class SafePlainFormatter(logging.Formatter):
         if datefmt:
             return dt.strftime(datefmt)
         return dt.isoformat(sep=" ", timespec="milliseconds")
+
+    def _format_with_structured_message(self, record):
+        structured_message = _format_structured_event_message(record)
+        if structured_message is None:
+            return super().format(record)
+
+        original_msg = record.msg
+        original_args = record.args
+        try:
+            record.msg = structured_message
+            record.args = ()
+            return super().format(record)
+        finally:
+            record.msg = original_msg
+            record.args = original_args
 
     def format(self, record):
         if not hasattr(record, "request_id"):
@@ -86,7 +115,7 @@ class SafePlainFormatter(logging.Formatter):
             record.tenant = None
         if not hasattr(record, "duration_ms"):
             record.duration_ms = None
-        return super().format(record)
+        return self._format_with_structured_message(record)
 
 
 class SafeColoredFormatter(SafePlainFormatter):
@@ -130,6 +159,17 @@ class SafeColoredFormatter(SafePlainFormatter):
             record.tenant = None
         if not hasattr(record, "duration_ms"):
             record.duration_ms = None
+        structured_message = _format_structured_event_message(record)
+        if structured_message is not None:
+            original_msg = record.msg
+            original_args = record.args
+            try:
+                record.msg = structured_message
+                record.args = ()
+                return self._formatter.format(record)
+            finally:
+                record.msg = original_msg
+                record.args = original_args
         return self._formatter.format(record)
 
 

@@ -395,6 +395,17 @@ Request / response log events:
 - `request_body`
 - `response_body`
 
+Plain / color formatter behavior:
+
+- middleware-emitted request / response logs are rendered as readable event lines
+- for example, plain output will look like:
+
+```text
+[2026-04-03 20:05:05.672+00:00] [INFO] [django.request] request_summary method=GET path=/api/health/ status_code=500 [request_id=6f80a469-349e-495a-8a1a-374173aa66f9]
+[2026-04-03 20:05:05.672+00:00] [DEBUG] [django.request] request_headers method=GET path=/api/health/ headers={'Host': 'localhost:8000'} [request_id=6f80a469-349e-495a-8a1a-374173aa66f9]
+[2026-04-03 20:05:05.672+00:00] [DEBUG] [django.request] response_headers method=GET path=/api/health/ status_code=500 headers={'Content-Type': 'text/html; charset=utf-8'} [request_id=6f80a469-349e-495a-8a1a-374173aa66f9]
+```
+
 ## Threads And Executors
 
 For threads, executors, background jobs, or standalone log enrichment, bind only the fields you need:
