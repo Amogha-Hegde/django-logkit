@@ -282,6 +282,34 @@ MIDDLEWARE = [
 ]
 ```
 
+Yes, you need to register the middleware in your Django `MIDDLEWARE` setting if you want automatic request-scoped values.
+
+Without the middleware:
+
+- `request_id` is not generated automatically
+- `trace_id`, `span_id`, `tenant`, and `user_id` are not pulled from the request
+- `duration_ms` is not measured automatically
+- you can still use `bind_log_context(...)`, `wrap_with_log_context(...)`, `bind_request_id(...)`, or `wrap_with_request_id(...)` manually
+
+Recommended placement:
+
+- put it after authentication / tenant resolution middleware if you want `user_id` and `tenant` to be available automatically
+- put it before application middleware or views that emit logs so those logs receive the bound context
+
+Typical example:
+
+```python
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "your_project.middleware.TenantMiddleware",
+    "django_logkit.middleware.RequestIdMiddleware",
+    # other middleware that should see request_id / trace_id / tenant / user_id
+]
+```
+
 The middleware supports these request-scoped fields:
 
 - `request_id`
@@ -563,6 +591,14 @@ from pathlib import Path
 from django_logkit import get_logger_config
 
 BASE_DIR = Path(__file__).resolve().parent
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django_logkit.middleware.RequestIdMiddleware",
+]
 
 LOGGING = get_logger_config(
     log_level="INFO",

@@ -18,6 +18,7 @@ LOG_CONTEXT_FIELDS = (
 )
 
 _context_vars = {field_name: ContextVar(f"django_logkit_{field_name}", default=None) for field_name in LOG_CONTEXT_FIELDS}
+_pending_server_log_context = ContextVar("django_logkit_pending_server_log_context", default=None)
 
 
 def _get_context_value(field_name):
@@ -40,6 +41,18 @@ def _resolve_bound_value(field_name, value):
 
 def get_log_context():
     return {field_name: _get_context_value(field_name) for field_name in LOG_CONTEXT_FIELDS}
+
+
+def set_pending_server_log_context(context):
+    return _pending_server_log_context.set(dict(context))
+
+
+def get_pending_server_log_context():
+    return _pending_server_log_context.get()
+
+
+def clear_pending_server_log_context():
+    _pending_server_log_context.set(None)
 
 
 def bind_log_context(

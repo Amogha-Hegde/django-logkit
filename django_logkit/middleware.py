@@ -2,7 +2,7 @@ import os
 from time import perf_counter
 from uuid import uuid4
 
-from .request_id import bind_log_context
+from .request_id import bind_log_context, clear_pending_server_log_context, set_pending_server_log_context
 
 
 def _resolve_user_id(request):
@@ -63,6 +63,7 @@ class RequestIdMiddleware:
         self.response_header_name = get_response_header_name("request_id")
 
     def __call__(self, request):
+        clear_pending_server_log_context()
         started_at = perf_counter()
         request_id = request.META.get(self.header_name) or str(uuid4())
         trace_id = request.META.get(self.trace_header_name)
@@ -78,17 +79,29 @@ class RequestIdMiddleware:
         request.tenant = tenant
         request.user_id = user_id
 
+        binding = bind_log_context(
+            request_id=request_id,
+            trace_id=trace_id,
+            span_id=span_id,
+            tenant=tenant,
+            user_id=user_id,
+        )
+        binding.__enter__()
         try:
-            with bind_log_context(
-                request_id=request_id,
-                trace_id=trace_id,
-                span_id=span_id,
-                tenant=tenant,
-                user_id=user_id,
-            ):
-                response = self.get_response(request)
+            response = self.get_response(request)
         finally:
             request.duration_ms = max(0, int(round((perf_counter() - started_at) * 1000)))
+            set_pending_server_log_context(
+                {
+                    "request_id": request_id,
+                    "trace_id": trace_id,
+                    "span_id": span_id,
+                    "tenant": tenant,
+                    "user_id": user_id,
+                    "duration_ms": request.duration_ms,
+                }
+            )
+            binding.__exit__(None, None, None)
 
         response[self.response_header_name] = request_id
         return response

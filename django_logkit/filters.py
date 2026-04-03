@@ -1,7 +1,7 @@
 import logging
 
 from .middleware import get_header_name
-from .request_id import get_log_context
+from .request_id import clear_pending_server_log_context, get_log_context, get_pending_server_log_context
 
 
 LOG_RECORD_DEFAULTS = {
@@ -12,6 +12,7 @@ LOG_RECORD_DEFAULTS = {
     "tenant": None,
     "duration_ms": None,
 }
+DJANGO_SERVER_LOGGER = "django.server"
 
 
 def _resolve_request_attribute(request, field_name):
@@ -62,8 +63,23 @@ def _resolve_record_value(record, field_name):
     return LOG_RECORD_DEFAULTS[field_name]
 
 
+def _get_pending_server_record_context(record):
+    if getattr(record, "name", None) != DJANGO_SERVER_LOGGER:
+        return {}
+
+    if not hasattr(record, "_django_logkit_pending_context"):
+        record._django_logkit_pending_context = get_pending_server_log_context() or {}
+        if record._django_logkit_pending_context:
+            clear_pending_server_log_context()
+
+    return record._django_logkit_pending_context
+
+
 class RequestIdFilter(logging.Filter):
     def filter(self, record):
         for field_name in LOG_RECORD_DEFAULTS:
-            setattr(record, field_name, _resolve_record_value(record, field_name))
+            value = _resolve_record_value(record, field_name)
+            if value == LOG_RECORD_DEFAULTS[field_name]:
+                value = _get_pending_server_record_context(record).get(field_name, value)
+            setattr(record, field_name, value)
         return True

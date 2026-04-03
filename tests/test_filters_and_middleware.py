@@ -3,7 +3,15 @@ from types import SimpleNamespace
 import django_logkit.middleware as middleware_module
 from django_logkit.filters import RequestIdFilter
 from django_logkit.middleware import RequestIdMiddleware
-from django_logkit.request_id import get_log_context, get_request_id, reset_request_id, set_request_id
+from django_logkit.request_id import (
+    clear_pending_server_log_context,
+    get_log_context,
+    get_request_id,
+    get_pending_server_log_context,
+    reset_request_id,
+    set_pending_server_log_context,
+    set_request_id,
+)
 
 
 def test_request_id_filter_sets_record_value():
@@ -143,6 +151,31 @@ def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
     assert record.tenant == "tenant-9"
 
 
+def test_request_id_filter_uses_pending_server_log_context():
+    clear_pending_server_log_context()
+    set_pending_server_log_context(
+        {
+            "request_id": "req-11",
+            "trace_id": "trace-11",
+            "span_id": "span-11",
+            "tenant": "tenant-11",
+            "user_id": "user-11",
+            "duration_ms": 33,
+        }
+    )
+    record = SimpleNamespace(name="django.server")
+
+    RequestIdFilter().filter(record)
+
+    assert record.request_id == "req-11"
+    assert record.trace_id == "trace-11"
+    assert record.span_id == "span-11"
+    assert record.tenant == "tenant-11"
+    assert record.user_id == "user-11"
+    assert record.duration_ms == 33
+    assert get_pending_server_log_context() is None
+
+
 def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     times = iter([20.0, 20.010])
     monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
@@ -167,3 +200,24 @@ def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     assert request.tenant == "tenant-10"
     assert request.duration_ms == 10
     assert response["X-Correlation-ID"] == "req-10"
+
+
+def test_request_id_middleware_stores_pending_server_context(monkeypatch):
+    times = iter([30.0, 30.021])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(
+        META={
+            "HTTP_X_REQUEST_ID": "req-12",
+            "HTTP_X_TRACE_ID": "trace-12",
+            "HTTP_X_SPAN_ID": "span-12",
+        }
+    )
+
+    response = RequestIdMiddleware(lambda incoming_request: DummyResponse())(request)
+    pending_context = get_pending_server_log_context()
+
+    assert response["X-Request-ID"] == "req-12"
+    assert pending_context["request_id"] == "req-12"
+    assert pending_context["trace_id"] == "trace-12"
+    assert pending_context["span_id"] == "span-12"
+    assert pending_context["duration_ms"] == 21
