@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import django_logkit.middleware as middleware_module
 from django_logkit.filters import RequestIdFilter
-from django_logkit.middleware import RequestIdMiddleware
+from django_logkit.middleware import RequestIdMiddleware, _extract_request_headers, _extract_response_headers
 from django_logkit.request_id import (
     clear_pending_server_log_context,
     get_log_context,
@@ -221,3 +221,74 @@ def test_request_id_middleware_stores_pending_server_context(monkeypatch):
     assert pending_context["trace_id"] == "trace-12"
     assert pending_context["span_id"] == "span-12"
     assert pending_context["duration_ms"] == 21
+
+
+def test_extract_request_headers_redacts_sensitive_values():
+    request = SimpleNamespace(
+        headers={
+            "Authorization": "Bearer secret",
+            "Cookie": "session=value",
+            "X-Trace-Id": "trace-1",
+        }
+    )
+
+    headers = _extract_request_headers(request)
+
+    assert headers["Authorization"] == "[REDACTED]"
+    assert headers["Cookie"] == "[REDACTED]"
+    assert headers["X-Trace-Id"] == "trace-1"
+
+
+def test_extract_response_headers_redacts_sensitive_values():
+    response = SimpleNamespace(headers={"Set-Cookie": "session=value", "Content-Type": "application/json"})
+
+    headers = _extract_response_headers(response)
+
+    assert headers["Set-Cookie"] == "[REDACTED]"
+    assert headers["Content-Type"] == "application/json"
+
+
+def test_request_id_middleware_logs_request_response_when_enabled(monkeypatch):
+    class DummyLogger:
+        def __init__(self):
+            self.calls = []
+
+        def info(self, message, *args):
+            self.calls.append(("info", message % args))
+
+        def debug(self, payload):
+            self.calls.append(("debug", payload))
+
+    logger = DummyLogger()
+    times = iter([40.0, 40.018])
+    original_get_logger = middleware_module.logging.getLogger
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module.logging, "getLogger", lambda name=None: logger if name == "django.request" else original_get_logger(name))
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_REQUESTS", "true")
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_REQUEST_HEADERS", "true")
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_RESPONSE_HEADERS", "true")
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_REQUEST_BODY", "true")
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_RESPONSE_BODY", "true")
+    request = SimpleNamespace(
+        META={"HTTP_X_REQUEST_ID": "req-13"},
+        method="GET",
+        path="/api/health/",
+        get_full_path=lambda: "/api/health/?verbose=1",
+        headers={"Authorization": "Bearer secret", "X-Trace-Id": "trace-13"},
+        body=b'{"ok":true}',
+    )
+    class Response(dict):
+        status_code = 200
+        headers = {"Content-Type": "application/json", "Set-Cookie": "session=value"}
+        content = b'{"status":"up"}'
+
+    response = Response()
+
+    RequestIdMiddleware(lambda incoming_request: response)(request)
+
+    assert logger.calls[0] == ("info", "GET /api/health/?verbose=1 - 200")
+    assert logger.calls[1][0] == "debug"
+    assert logger.calls[1][1]["Authorization"] == "[REDACTED]"
+    assert logger.calls[2] == ("debug", '{"ok":true}')
+    assert logger.calls[3][1]["Set-Cookie"] == "[REDACTED]"
+    assert logger.calls[4] == ("debug", '{"status":"up"}')

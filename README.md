@@ -327,6 +327,7 @@ Behavior:
 - `duration_ms` is measured automatically for the request lifecycle
 - every field is optional; you can use any one of them without the others
 - the request ID is written back to the response header using the configured request ID header name
+- optional request / response logging can be enabled independently through environment variables
 
 Default request header names:
 
@@ -342,6 +343,17 @@ Environment variable overrides:
 - `DJANGO_LOGKIT_SPAN_ID_HEADER`
 - `DJANGO_LOGKIT_TENANT_HEADER`
 
+Optional request / response logging flags:
+
+- `DJANGO_LOGKIT_LOG_REQUESTS`
+- `DJANGO_LOGKIT_LOG_REQUEST_HEADERS`
+- `DJANGO_LOGKIT_LOG_RESPONSE_HEADERS`
+- `DJANGO_LOGKIT_LOG_REQUEST_BODY`
+- `DJANGO_LOGKIT_LOG_RESPONSE_BODY`
+- `DJANGO_LOGKIT_REQUEST_LOGGER`
+- `DJANGO_LOGKIT_BODY_MAX_LENGTH`
+- `DJANGO_LOGKIT_REDACT_HEADERS`
+
 Example:
 
 ```bash
@@ -350,6 +362,27 @@ export DJANGO_LOGKIT_TRACE_ID_HEADER=HTTP_X_B3_TRACE_ID
 export DJANGO_LOGKIT_SPAN_ID_HEADER=HTTP_X_B3_SPAN_ID
 export DJANGO_LOGKIT_TENANT_HEADER=HTTP_X_ACCOUNT
 ```
+
+Request / response logging example:
+
+```bash
+export DJANGO_LOGKIT_LOG_REQUESTS=true
+export DJANGO_LOGKIT_LOG_REQUEST_HEADERS=true
+export DJANGO_LOGKIT_LOG_RESPONSE_HEADERS=true
+export DJANGO_LOGKIT_LOG_REQUEST_BODY=false
+export DJANGO_LOGKIT_LOG_RESPONSE_BODY=false
+export DJANGO_LOGKIT_REQUEST_LOGGER=django.request
+export DJANGO_LOGKIT_BODY_MAX_LENGTH=4096
+```
+
+Behavior:
+
+- all request / response logging is disabled by default
+- each log type can be enabled independently
+- the summary log is emitted at `INFO`
+- headers and bodies are emitted at `DEBUG`
+- sensitive headers are redacted by default: `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, `Proxy-Authorization`
+- you can override the redacted header list with `DJANGO_LOGKIT_REDACT_HEADERS` as a comma-separated list
 
 ## Threads And Executors
 
