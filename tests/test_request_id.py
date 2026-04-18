@@ -64,24 +64,37 @@ def test_wrap_with_request_id_captures_current_value():
 def test_bind_log_context_sets_requested_fields_and_resets():
     assert get_log_context()["trace_id"] is None
 
-    with bind_log_context(trace_id="trace-1", span_id="span-1", user_id="user-1", tenant="tenant-1", duration_ms=123) as values:
+    with bind_log_context(
+        trace_id="trace-1",
+        span_id="span-1",
+        project_id="project-1",
+        org_id="org-1",
+        user_id="user-1",
+        tenant="tenant-1",
+        duration_ms=123,
+    ) as values:
         assert values["trace_id"] == "trace-1"
         assert values["span_id"] == "span-1"
+        assert values["project_id"] == "project-1"
+        assert values["org_id"] == "org-1"
         assert values["user_id"] == "user-1"
         assert values["tenant"] == "tenant-1"
         assert values["duration_ms"] == 123
         assert get_log_context()["trace_id"] == "trace-1"
 
     assert get_log_context()["trace_id"] is None
+    assert get_log_context()["project_id"] is None
     assert get_log_context()["duration_ms"] is None
 
 
 def test_wrap_with_log_context_captures_current_values():
-    with bind_log_context(trace_id="trace-2", tenant="tenant-2"):
+    with bind_log_context(trace_id="trace-2", project_id="project-2", org_id="org-2", tenant="tenant-2"):
         wrapped = wrap_with_log_context(get_log_context)
 
     values = wrapped()
 
     assert values["trace_id"] == "trace-2"
+    assert values["project_id"] == "project-2"
+    assert values["org_id"] == "org-2"
     assert values["tenant"] == "tenant-2"
     assert get_log_context()["trace_id"] is None

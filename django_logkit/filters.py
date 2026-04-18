@@ -8,6 +8,8 @@ LOG_RECORD_DEFAULTS = {
     "request_id": "-",
     "trace_id": "-",
     "span_id": "-",
+    "project_id": None,
+    "org_id": None,
     "user_id": None,
     "tenant": None,
     "duration_ms": None,
@@ -26,6 +28,10 @@ def _resolve_request_attribute(request, field_name):
         return getattr(request, "trace_id", None) or meta.get(get_header_name("trace_id"))
     if field_name == "span_id":
         return getattr(request, "span_id", None) or meta.get(get_header_name("span_id"))
+    if field_name == "project_id":
+        return getattr(request, "project_id", None) or meta.get(get_header_name("project_id"))
+    if field_name == "org_id":
+        return getattr(request, "org_id", None) or meta.get(get_header_name("org_id"))
     if field_name == "tenant":
         tenant = getattr(request, "tenant", None)
         if tenant is not None:

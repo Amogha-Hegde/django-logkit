@@ -32,6 +32,8 @@ DEFAULT_JSON_FIELDS = {
     "request_id": "request_id",
     "trace_id": "trace_id",
     "span_id": "span_id",
+    "project_id": "project_id",
+    "org_id": "org_id",
     "user_id": "user_id",
     "tenant": "tenant",
     "duration_ms": "duration_ms",
@@ -109,6 +111,10 @@ class SafePlainFormatter(logging.Formatter):
             record.trace_id = "-"
         if not hasattr(record, "span_id"):
             record.span_id = "-"
+        if not hasattr(record, "project_id"):
+            record.project_id = None
+        if not hasattr(record, "org_id"):
+            record.org_id = None
         if not hasattr(record, "user_id"):
             record.user_id = None
         if not hasattr(record, "tenant"):
@@ -153,6 +159,10 @@ class SafeColoredFormatter(SafePlainFormatter):
             record.trace_id = "-"
         if not hasattr(record, "span_id"):
             record.span_id = "-"
+        if not hasattr(record, "project_id"):
+            record.project_id = None
+        if not hasattr(record, "org_id"):
+            record.org_id = None
         if not hasattr(record, "user_id"):
             record.user_id = None
         if not hasattr(record, "tenant"):

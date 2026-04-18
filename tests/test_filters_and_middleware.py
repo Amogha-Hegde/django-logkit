@@ -34,6 +34,8 @@ def test_request_id_filter_uses_defaults_when_missing():
     assert record.request_id == "-"
     assert record.trace_id == "-"
     assert record.span_id == "-"
+    assert record.project_id is None
+    assert record.org_id is None
     assert record.user_id is None
     assert record.tenant is None
     assert record.duration_ms is None
@@ -45,6 +47,8 @@ def test_request_id_filter_uses_request_attribute_when_context_missing():
             request_id="req-3",
             trace_id="trace-3",
             span_id="span-3",
+            project_id="project-3",
+            org_id="org-3",
             user_id="user-3",
             tenant="tenant-3",
             duration_ms=45,
@@ -56,6 +60,8 @@ def test_request_id_filter_uses_request_attribute_when_context_missing():
     assert record.request_id == "req-3"
     assert record.trace_id == "trace-3"
     assert record.span_id == "span-3"
+    assert record.project_id == "project-3"
+    assert record.org_id == "org-3"
     assert record.user_id == "user-3"
     assert record.tenant == "tenant-3"
     assert record.duration_ms == 45
@@ -66,6 +72,8 @@ def test_request_id_filter_uses_request_meta_header_when_context_missing():
         request=SimpleNamespace(
             META={
                 "HTTP_X_REQUEST_ID": "req-4",
+                "HTTP_X_PROJECT_ID": "project-4",
+                "HTTP_X_ORG_ID": "org-4",
                 "HTTP_X_TENANT": "tenant-4",
             }
         )
@@ -74,6 +82,8 @@ def test_request_id_filter_uses_request_meta_header_when_context_missing():
     RequestIdFilter().filter(record)
 
     assert record.request_id == "req-4"
+    assert record.project_id == "project-4"
+    assert record.org_id == "org-4"
     assert record.tenant == "tenant-4"
 
 
@@ -90,6 +100,8 @@ def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypat
             "HTTP_X_REQUEST_ID": "req-2",
             "HTTP_X_TRACE_ID": "trace-2",
             "HTTP_X_SPAN_ID": "span-2",
+            "HTTP_X_PROJECT_ID": "project-2",
+            "HTTP_X_ORG_ID": "org-2",
             "HTTP_X_TENANT": "tenant-2",
         },
         user=SimpleNamespace(is_authenticated=True, pk="user-2"),
@@ -99,6 +111,8 @@ def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypat
         assert incoming_request.request_id == "req-2"
         assert incoming_request.trace_id == "trace-2"
         assert incoming_request.span_id == "span-2"
+        assert incoming_request.project_id == "project-2"
+        assert incoming_request.org_id == "org-2"
         assert incoming_request.user_id == "user-2"
         assert incoming_request.tenant == "tenant-2"
         assert get_request_id() == "req-2"
@@ -131,6 +145,8 @@ def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
     monkeypatch.setenv("DJANGO_LOGKIT_REQUEST_ID_HEADER", "HTTP_X_CORRELATION_ID")
     monkeypatch.setenv("DJANGO_LOGKIT_TRACE_ID_HEADER", "HTTP_X_B3_TRACE_ID")
     monkeypatch.setenv("DJANGO_LOGKIT_SPAN_ID_HEADER", "HTTP_X_B3_SPAN_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_PROJECT_ID_HEADER", "HTTP_X_PROJECT")
+    monkeypatch.setenv("DJANGO_LOGKIT_ORG_ID_HEADER", "HTTP_X_ORGANIZATION")
     monkeypatch.setenv("DJANGO_LOGKIT_TENANT_HEADER", "HTTP_X_ACCOUNT")
     record = SimpleNamespace(
         request=SimpleNamespace(
@@ -138,6 +154,8 @@ def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
                 "HTTP_X_CORRELATION_ID": "req-9",
                 "HTTP_X_B3_TRACE_ID": "trace-9",
                 "HTTP_X_B3_SPAN_ID": "span-9",
+                "HTTP_X_PROJECT": "project-9",
+                "HTTP_X_ORGANIZATION": "org-9",
                 "HTTP_X_ACCOUNT": "tenant-9",
             }
         )
@@ -148,6 +166,8 @@ def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
     assert record.request_id == "req-9"
     assert record.trace_id == "trace-9"
     assert record.span_id == "span-9"
+    assert record.project_id == "project-9"
+    assert record.org_id == "org-9"
     assert record.tenant == "tenant-9"
 
 
@@ -158,6 +178,8 @@ def test_request_id_filter_uses_pending_server_log_context():
             "request_id": "req-11",
             "trace_id": "trace-11",
             "span_id": "span-11",
+            "project_id": "project-11",
+            "org_id": "org-11",
             "tenant": "tenant-11",
             "user_id": "user-11",
             "duration_ms": 33,
@@ -170,6 +192,8 @@ def test_request_id_filter_uses_pending_server_log_context():
     assert record.request_id == "req-11"
     assert record.trace_id == "trace-11"
     assert record.span_id == "span-11"
+    assert record.project_id == "project-11"
+    assert record.org_id == "org-11"
     assert record.tenant == "tenant-11"
     assert record.user_id == "user-11"
     assert record.duration_ms == 33
@@ -182,12 +206,16 @@ def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     monkeypatch.setenv("DJANGO_LOGKIT_REQUEST_ID_HEADER", "HTTP_X_CORRELATION_ID")
     monkeypatch.setenv("DJANGO_LOGKIT_TRACE_ID_HEADER", "HTTP_X_B3_TRACE_ID")
     monkeypatch.setenv("DJANGO_LOGKIT_SPAN_ID_HEADER", "HTTP_X_B3_SPAN_ID")
+    monkeypatch.setenv("DJANGO_LOGKIT_PROJECT_ID_HEADER", "HTTP_X_PROJECT")
+    monkeypatch.setenv("DJANGO_LOGKIT_ORG_ID_HEADER", "HTTP_X_ORGANIZATION")
     monkeypatch.setenv("DJANGO_LOGKIT_TENANT_HEADER", "HTTP_X_ACCOUNT")
     request = SimpleNamespace(
         META={
             "HTTP_X_CORRELATION_ID": "req-10",
             "HTTP_X_B3_TRACE_ID": "trace-10",
             "HTTP_X_B3_SPAN_ID": "span-10",
+            "HTTP_X_PROJECT": "project-10",
+            "HTTP_X_ORGANIZATION": "org-10",
             "HTTP_X_ACCOUNT": "tenant-10",
         }
     )
@@ -197,6 +225,8 @@ def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     assert request.request_id == "req-10"
     assert request.trace_id == "trace-10"
     assert request.span_id == "span-10"
+    assert request.project_id == "project-10"
+    assert request.org_id == "org-10"
     assert request.tenant == "tenant-10"
     assert request.duration_ms == 10
     assert response["X-Correlation-ID"] == "req-10"
@@ -210,6 +240,8 @@ def test_request_id_middleware_stores_pending_server_context(monkeypatch):
             "HTTP_X_REQUEST_ID": "req-12",
             "HTTP_X_TRACE_ID": "trace-12",
             "HTTP_X_SPAN_ID": "span-12",
+            "HTTP_X_PROJECT_ID": "project-12",
+            "HTTP_X_ORG_ID": "org-12",
         }
     )
 
@@ -220,6 +252,8 @@ def test_request_id_middleware_stores_pending_server_context(monkeypatch):
     assert pending_context["request_id"] == "req-12"
     assert pending_context["trace_id"] == "trace-12"
     assert pending_context["span_id"] == "span-12"
+    assert pending_context["project_id"] == "project-12"
+    assert pending_context["org_id"] == "org-12"
     assert pending_context["duration_ms"] == 21
 
 

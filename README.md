@@ -317,6 +317,8 @@ The middleware supports these request-scoped fields:
 - `request_id`
 - `trace_id`
 - `span_id`
+- `project_id`
+- `org_id`
 - `user_id`
 - `tenant`
 - `duration_ms`
@@ -324,7 +326,7 @@ The middleware supports these request-scoped fields:
 Behavior:
 
 - `request_id` is read from the configured request header if present, otherwise generated automatically
-- `trace_id`, `span_id`, and `tenant` are read from configured request headers when present
+- `trace_id`, `span_id`, `project_id`, `org_id`, and `tenant` are read from configured request headers when present
 - `user_id` is resolved from `request.user_id` or `request.user.pk` / `request.user.id` when available
 - `duration_ms` is measured automatically for the request lifecycle
 - every field is optional; you can use any one of them without the others
@@ -336,6 +338,8 @@ Default request header names:
 - `HTTP_X_REQUEST_ID`
 - `HTTP_X_TRACE_ID`
 - `HTTP_X_SPAN_ID`
+- `HTTP_X_PROJECT_ID`
+- `HTTP_X_ORG_ID`
 - `HTTP_X_TENANT`
 
 Environment variable overrides:
@@ -343,6 +347,8 @@ Environment variable overrides:
 - `DJANGO_LOGKIT_REQUEST_ID_HEADER`
 - `DJANGO_LOGKIT_TRACE_ID_HEADER`
 - `DJANGO_LOGKIT_SPAN_ID_HEADER`
+- `DJANGO_LOGKIT_PROJECT_ID_HEADER`
+- `DJANGO_LOGKIT_ORG_ID_HEADER`
 - `DJANGO_LOGKIT_TENANT_HEADER`
 
 Optional request / response logging flags:
@@ -362,6 +368,8 @@ Example:
 export DJANGO_LOGKIT_REQUEST_ID_HEADER=HTTP_X_CORRELATION_ID
 export DJANGO_LOGKIT_TRACE_ID_HEADER=HTTP_X_B3_TRACE_ID
 export DJANGO_LOGKIT_SPAN_ID_HEADER=HTTP_X_B3_SPAN_ID
+export DJANGO_LOGKIT_PROJECT_ID_HEADER=HTTP_X_PROJECT
+export DJANGO_LOGKIT_ORG_ID_HEADER=HTTP_X_ORGANIZATION
 export DJANGO_LOGKIT_TENANT_HEADER=HTTP_X_ACCOUNT
 ```
 
@@ -464,6 +472,8 @@ When `console_style="json"` or `file_style="json"`, logs are emitted as JSON wit
 - `request_id`
 - `trace_id`
 - `span_id`
+- `project_id`
+- `org_id`
 - `user_id`
 - `tenant`
 - `duration_ms`
@@ -508,6 +518,8 @@ Supported dynamic field values include any standard `logging.LogRecord` attribut
 - `request_id`
 - `trace_id`
 - `span_id`
+- `project_id`
+- `org_id`
 - `user_id`
 - `tenant`
 - `duration_ms`
@@ -618,7 +630,7 @@ Color console output uses the same structure as plain output, with ANSI color ap
 JSON output:
 
 ```json
-{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "event": "request_summary", "message": "request_summary", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "method": "GET", "path": "/api/health/", "request_id": "req-123", "trace_id": "trace-123", "span_id": "span-123", "user_id": "user-42", "tenant": "tenant-acme", "duration_ms": 18, "service": "billing-api", "environment": "production"}
+{"timestamp": "2026-03-25T13:12:11.245000+00:00", "level": "INFO", "hostname": "app-worker-01", "logger": "payments.service", "event": "request_summary", "message": "request_summary", "module": "service", "function": "create_invoice", "line": 87, "process": 42110, "thread": 140735197184768, "method": "GET", "path": "/api/health/", "request_id": "req-123", "trace_id": "trace-123", "span_id": "span-123", "project_id": "project-123", "org_id": "org-123", "user_id": "user-42", "tenant": "tenant-acme", "duration_ms": 18, "service": "billing-api", "environment": "production"}
 ```
 
 ## Celery Notes

@@ -32,12 +32,16 @@ HEADER_ENV_VARS = {
     "request_id": "DJANGO_LOGKIT_REQUEST_ID_HEADER",
     "trace_id": "DJANGO_LOGKIT_TRACE_ID_HEADER",
     "span_id": "DJANGO_LOGKIT_SPAN_ID_HEADER",
+    "project_id": "DJANGO_LOGKIT_PROJECT_ID_HEADER",
+    "org_id": "DJANGO_LOGKIT_ORG_ID_HEADER",
     "tenant": "DJANGO_LOGKIT_TENANT_HEADER",
 }
 DEFAULT_HEADER_NAMES = {
     "request_id": "HTTP_X_REQUEST_ID",
     "trace_id": "HTTP_X_TRACE_ID",
     "span_id": "HTTP_X_SPAN_ID",
+    "project_id": "HTTP_X_PROJECT_ID",
+    "org_id": "HTTP_X_ORG_ID",
     "tenant": "HTTP_X_TENANT",
 }
 DEFAULT_REDACTED_HEADERS = {"authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"}
@@ -162,6 +166,8 @@ class RequestIdMiddleware:
         self.header_name = get_header_name("request_id")
         self.trace_header_name = get_header_name("trace_id")
         self.span_header_name = get_header_name("span_id")
+        self.project_header_name = get_header_name("project_id")
+        self.org_header_name = get_header_name("org_id")
         self.tenant_header_name = get_header_name("tenant")
         self.response_header_name = get_response_header_name("request_id")
         self.request_logger = logging.getLogger(os.getenv(REQUEST_LOGGER_ENV_VAR, "django.request"))
@@ -247,6 +253,8 @@ class RequestIdMiddleware:
         request_id = request.META.get(self.header_name) or str(uuid4())
         trace_id = request.META.get(self.trace_header_name)
         span_id = request.META.get(self.span_header_name)
+        project_id = request.META.get(self.project_header_name)
+        org_id = request.META.get(self.org_header_name)
         tenant = _resolve_tenant(request)
         if tenant is None:
             tenant = request.META.get(self.tenant_header_name)
@@ -255,6 +263,8 @@ class RequestIdMiddleware:
         request.request_id = request_id
         request.trace_id = trace_id
         request.span_id = span_id
+        request.project_id = project_id
+        request.org_id = org_id
         request.tenant = tenant
         request.user_id = user_id
 
@@ -262,6 +272,8 @@ class RequestIdMiddleware:
             request_id=request_id,
             trace_id=trace_id,
             span_id=span_id,
+            project_id=project_id,
+            org_id=org_id,
             tenant=tenant,
             user_id=user_id,
         )
@@ -279,6 +291,8 @@ class RequestIdMiddleware:
                     "request_id": request_id,
                     "trace_id": trace_id,
                     "span_id": span_id,
+                    "project_id": project_id,
+                    "org_id": org_id,
                     "tenant": tenant,
                     "user_id": user_id,
                     "duration_ms": request.duration_ms,

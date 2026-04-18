@@ -136,6 +136,8 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     record.request_id = "req-1"
     record.trace_id = "trace-1"
     record.span_id = "span-1"
+    record.project_id = "project-1"
+    record.org_id = "org-1"
     record.user_id = "user-1"
     record.tenant = "tenant-1"
     record.duration_ms = 42
@@ -155,6 +157,8 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     assert '"request_id": "req-1"' in rendered
     assert '"trace_id": "trace-1"' in rendered
     assert '"span_id": "span-1"' in rendered
+    assert '"project_id": "project-1"' in rendered
+    assert '"org_id": "org-1"' in rendered
     assert '"user_id": "user-1"' in rendered
     assert '"tenant": "tenant-1"' in rendered
     assert '"duration_ms": 42' in rendered
