@@ -1,3 +1,4 @@
+import configparser
 from pathlib import Path
 
 
@@ -42,6 +43,94 @@ DEFAULT_LOG_COLORS = {
     "ERROR": "red",
     "CRITICAL": "bold_red",
 }
+CONFIG_SECTION = "django-logkit"
+LOGGER_LEVELS_SECTION = "logger_levels"
+LOG_COLORS_SECTION = "log_colors"
+JSON_FIELDS_SECTION = "json_fields"
+
+
+def _parse_config_bool(value, parameter_name):
+    normalized_value = value.strip().lower()
+    if normalized_value in {"1", "true", "yes", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{parameter_name} must be a boolean")
+
+
+def _parse_config_int(value, parameter_name):
+    try:
+        return int(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{parameter_name} must be an integer") from exc
+
+
+def _parse_config_list(value):
+    return [item.strip() for item in value.replace("\n", ",").split(",") if item.strip()]
+
+
+def _read_config_section(parser, section_name):
+    if not parser.has_section(section_name):
+        return {}
+    return {key: value for key, value in parser.items(section_name)}
+
+
+def _parse_ini_config(config_file_path):
+    parser = configparser.ConfigParser()
+    read_files = parser.read(config_file_path)
+    if not read_files:
+        raise ValueError(f"failed to read config file: {config_file_path}")
+    if not parser.has_section(CONFIG_SECTION):
+        raise ValueError(f"config file must contain [{CONFIG_SECTION}] section")
+
+    raw_config = dict(parser.items(CONFIG_SECTION))
+    config_kwargs = {}
+
+    if "log_level" not in raw_config:
+        raise ValueError("config file must define log_level")
+
+    config_kwargs["log_level"] = raw_config["log_level"]
+
+    string_options = {
+        "base_dir",
+        "log_file_name",
+        "console_style",
+        "file_style",
+        "log_when",
+        "log_format",
+        "log_timezone",
+    }
+    bool_options = {"enable_file_logging", "include_request_id"}
+    int_options = {"log_backup"}
+
+    for option_name in string_options:
+        if option_name in raw_config:
+            config_kwargs[option_name] = raw_config[option_name]
+
+    for option_name in bool_options:
+        if option_name in raw_config:
+            config_kwargs[option_name] = _parse_config_bool(raw_config[option_name], option_name)
+
+    for option_name in int_options:
+        if option_name in raw_config:
+            config_kwargs[option_name] = _parse_config_int(raw_config[option_name], option_name)
+
+    if "app_loggers" in raw_config:
+        config_kwargs["app_loggers"] = _parse_config_list(raw_config["app_loggers"])
+
+    logger_levels = _read_config_section(parser, LOGGER_LEVELS_SECTION)
+    if logger_levels:
+        config_kwargs["logger_levels"] = logger_levels
+
+    log_colors = _read_config_section(parser, LOG_COLORS_SECTION)
+    if log_colors:
+        config_kwargs["log_colors"] = log_colors
+
+    json_fields = _read_config_section(parser, JSON_FIELDS_SECTION)
+    if json_fields:
+        config_kwargs["json_fields"] = json_fields
+
+    return config_kwargs
 
 
 def _validate_log_level(log_level):
@@ -486,3 +575,8 @@ def get_logger_config(
         json_fields=json_fields,
         log_timezone=log_timezone,
     )
+
+
+def get_logger_config_from_file(config_file_path):
+    config_kwargs = _parse_ini_config(config_file_path)
+    return get_logger_config(**config_kwargs)

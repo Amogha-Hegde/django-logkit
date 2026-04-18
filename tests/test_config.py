@@ -194,6 +194,68 @@ def test_get_logger_config_accepts_string_base_dir(tmp_path):
     assert logging_config["handlers"]["file"]["filename"] == str(tmp_path / "logs" / "string-base-dir.log")
 
 
+def test_get_logger_config_from_file_reads_ini_config(tmp_path):
+    config_file = tmp_path / "logging.ini"
+    config_file.write_text(
+        "\n".join(
+            [
+                "[django-logkit]",
+                "log_level = INFO",
+                f"base_dir = {tmp_path}",
+                "enable_file_logging = true",
+                "log_file_name = ini.log",
+                "console_style = json",
+                "file_style = plain",
+                "include_request_id = true",
+                "app_loggers = payments, notifications",
+                "log_backup = 7",
+                "log_when = D",
+                "log_timezone = UTC",
+                "",
+                "[logger_levels]",
+                "payments = DEBUG",
+                "django.db.backends = WARNING",
+                "",
+                "[log_colors]",
+                "info = green",
+                "",
+                "[json_fields]",
+                "ts = timestamp",
+                "msg = message",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    logging_config = config.get_logger_config_from_file(str(config_file))
+
+    assert logging_config["handlers"]["console"]["formatter"] == config.JSON_FORMATTER
+    assert logging_config["handlers"]["file"]["formatter"] == config.PLAIN_FORMATTER
+    assert logging_config["handlers"]["file"]["filename"] == str(tmp_path / "logs" / "ini.log")
+    assert logging_config["handlers"]["file"]["backupCount"] == 7
+    assert logging_config["handlers"]["file"]["when"] == "D"
+    assert logging_config["loggers"]["payments"]["level"] == "DEBUG"
+    assert logging_config["loggers"]["notifications"]["level"] == "INFO"
+    assert logging_config["formatters"][config.JSON_FORMATTER]["json_fields"] == {"ts": "timestamp", "msg": "message"}
+    assert logging_config["formatters"][config.COLOR_FORMATTER]["log_colors"]["INFO"] == "green"
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        ("[other]\nlog_level=INFO\n", r"config file must contain \[django-logkit\] section"),
+        ("[django-logkit]\nconsole_style=plain\n", "config file must define log_level"),
+        ("[django-logkit]\nlog_level=INFO\nenable_file_logging=maybe\n", "enable_file_logging must be a boolean"),
+    ],
+)
+def test_get_logger_config_from_file_validation_errors(tmp_path, contents, message):
+    config_file = tmp_path / "logging.ini"
+    config_file.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        config.get_logger_config_from_file(str(config_file))
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [

@@ -39,6 +39,7 @@ from django_logkit import (
     build_celery_headers,
     get_log_context,
     get_logger_config,
+    get_logger_config_from_file,
     get_logger_config_with_file,
     get_logger_config_without_file,
     wrap_with_log_context,
@@ -270,6 +271,60 @@ LOGGING = get_logger_config_with_file(
     include_request_id=True,
 )
 ```
+
+## INI Config File
+
+If you want logging config to live outside Python code, use:
+
+```python
+from django_logkit import get_logger_config_from_file
+
+
+LOGGING = get_logger_config_from_file("/path/to/django-logkit.ini")
+```
+
+The file must contain a `[django-logkit]` section. Example:
+
+```ini
+[django-logkit]
+log_level = INFO
+base_dir = /srv/app
+enable_file_logging = true
+log_file_name = application.log
+console_style = json
+file_style = plain
+include_request_id = true
+app_loggers = payments, notifications
+log_backup = 7
+log_when = D
+log_timezone = UTC
+
+[logger_levels]
+payments = DEBUG
+django.db.backends = WARNING
+
+[log_colors]
+info = green
+error = red
+
+[json_fields]
+ts = timestamp
+msg = message
+rid = request_id
+```
+
+Supported sections:
+
+- `[django-logkit]` for scalar options such as `log_level`, `base_dir`, `console_style`, `file_style`, `include_request_id`, `log_format`, and `log_timezone`
+- `[logger_levels]` for per-logger level overrides
+- `[log_colors]` for color formatter mappings
+- `[json_fields]` for JSON output field mappings
+
+Notes:
+
+- `log_level` is required
+- `app_loggers` accepts comma-separated or newline-separated logger names
+- boolean values accept `true/false`, `yes/no`, `on/off`, or `1/0`
 
 ## Request Context Middleware
 
