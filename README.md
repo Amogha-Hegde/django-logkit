@@ -283,6 +283,11 @@ from django_logkit import get_logger_config_from_file
 LOGGING = get_logger_config_from_file("/path/to/django-logkit.ini")
 ```
 
+Ready-to-copy sample files are included at:
+
+- [django-logkit.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.sample.ini) for JSON-oriented output
+- [django-logkit.plain.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.plain.sample.ini) for plain/color output
+
 The file must contain a `[django-logkit]` section. Example:
 
 ```ini
