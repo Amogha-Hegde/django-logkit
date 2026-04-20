@@ -299,6 +299,7 @@ def test_json_formatter_parses_django_server_access_log(monkeypatch):
 
     rendered = formatter.format(record)
 
+    assert '"event": "request_summary"' in rendered
     assert '"message": "GET /api/health/ HTTP/1.1"' in rendered
     assert '"method": "GET"' in rendered
     assert '"path": "/api/health/"' in rendered

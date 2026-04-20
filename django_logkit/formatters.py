@@ -39,6 +39,7 @@ DEFAULT_JSON_FIELDS = {
     "duration_ms": "duration_ms",
 }
 DJANGO_SERVER_LOGGER = "django.server"
+DJANGO_SERVER_EVENT = "request_summary"
 DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
 REQUEST_LINE_PATTERN = re.compile(r"^(?P<method>\S+)\s+(?P<path>\S+)\s+(?P<http_version>\S+)$")
 STRUCTURED_EVENT_FIELDS = ("event", "method", "path", "status_code", "headers", "body")
@@ -241,7 +242,16 @@ class JsonFormatter(logging.Formatter):
     def _structured_event_payload(self, record):
         event = getattr(record, "event", None)
         if event is None:
-            return {}
+            parsed_server_fields = self._parse_django_server_fields(record)
+            if parsed_server_fields is None:
+                return {}
+
+            payload = {"event": DJANGO_SERVER_EVENT}
+            for field_name in STRUCTURED_EVENT_FIELDS[1:]:
+                value = parsed_server_fields.get(field_name)
+                if value is not None:
+                    payload[field_name] = value
+            return payload
 
         payload = {"event": event}
         for field_name in STRUCTURED_EVENT_FIELDS[1:]:
