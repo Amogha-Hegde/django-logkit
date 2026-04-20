@@ -28,6 +28,15 @@ def test_safe_plain_formatter_injects_request_id():
     assert formatter.format(record) == "hello [-]"
 
 
+def test_safe_plain_formatter_injects_full_context_defaults():
+    formatter = formatters.SafePlainFormatter(
+        "%(message)s [%(request_id)s] [%(trace_id)s] [%(span_id)s] [%(project_id)s] [%(org_id)s] [%(tenant)s] [%(duration_ms)s]"
+    )
+    record = make_record()
+
+    assert formatter.format(record) == "hello [-] [-] [-] [-] [-] [-] [-]"
+
+
 def test_safe_plain_formatter_uses_configured_timezone():
     formatter = formatters.SafePlainFormatter("%(asctime)s %(message)s", log_timezone="UTC")
     record = make_record()

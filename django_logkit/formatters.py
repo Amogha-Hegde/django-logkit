@@ -112,15 +112,15 @@ class SafePlainFormatter(logging.Formatter):
         if not hasattr(record, "span_id"):
             record.span_id = "-"
         if not hasattr(record, "project_id"):
-            record.project_id = None
+            record.project_id = "-"
         if not hasattr(record, "org_id"):
-            record.org_id = None
+            record.org_id = "-"
         if not hasattr(record, "user_id"):
             record.user_id = None
         if not hasattr(record, "tenant"):
-            record.tenant = None
+            record.tenant = "-"
         if not hasattr(record, "duration_ms"):
-            record.duration_ms = None
+            record.duration_ms = "-"
         return self._format_with_structured_message(record)
 
 
@@ -160,15 +160,15 @@ class SafeColoredFormatter(SafePlainFormatter):
         if not hasattr(record, "span_id"):
             record.span_id = "-"
         if not hasattr(record, "project_id"):
-            record.project_id = None
+            record.project_id = "-"
         if not hasattr(record, "org_id"):
-            record.org_id = None
+            record.org_id = "-"
         if not hasattr(record, "user_id"):
             record.user_id = None
         if not hasattr(record, "tenant"):
-            record.tenant = None
+            record.tenant = "-"
         if not hasattr(record, "duration_ms"):
-            record.duration_ms = None
+            record.duration_ms = "-"
         structured_message = _format_structured_event_message(record)
         if structured_message is not None:
             original_msg = record.msg

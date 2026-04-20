@@ -88,7 +88,7 @@ Arguments:
 - `log_when`: rotation schedule, one of `S`, `M`, `H`, `D`, `MIDNIGHT`, `W0`-`W6`
 - `app_loggers`: additional logger names to configure
 - `logger_levels`: per-logger level overrides
-- `include_request_id`: adds request ID filter support to handlers
+- `include_request_id`: adds request-context filter support to handlers
 - `log_format`: optional override for the plain/color formatter string
 - `log_colors`: optional override for color formatter level-to-color mapping
 - `json_fields`: optional override for JSON output fields as `{output_key: record_field_name}`
@@ -651,11 +651,13 @@ For `log_format`, you can use standard Python `logging` record attributes such a
 - `%(processName)s`
 - `%(message)s`
 
-Custom field added by `django-logkit`:
+Custom fields added by `django-logkit`:
 
 - `%(request_id)s`
 - `%(trace_id)s`
 - `%(span_id)s`
+- `%(project_id)s`
+- `%(org_id)s`
 - `%(user_id)s`
 - `%(tenant)s`
 - `%(duration_ms)s`
