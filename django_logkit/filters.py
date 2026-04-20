@@ -8,11 +8,11 @@ LOG_RECORD_DEFAULTS = {
     "request_id": "-",
     "trace_id": "-",
     "span_id": "-",
-    "project_id": None,
-    "org_id": None,
-    "user_id": None,
-    "tenant": None,
-    "duration_ms": None,
+    "project_id": "-",
+    "org_id": "-",
+    "user_id": "-",
+    "tenant": "-",
+    "duration_ms": "-",
 }
 DJANGO_SERVER_LOGGER = "django.server"
 

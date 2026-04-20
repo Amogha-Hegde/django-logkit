@@ -34,11 +34,11 @@ def test_request_id_filter_uses_defaults_when_missing():
     assert record.request_id == "-"
     assert record.trace_id == "-"
     assert record.span_id == "-"
-    assert record.project_id is None
-    assert record.org_id is None
-    assert record.user_id is None
-    assert record.tenant is None
-    assert record.duration_ms is None
+    assert record.project_id == "-"
+    assert record.org_id == "-"
+    assert record.user_id == "-"
+    assert record.tenant == "-"
+    assert record.duration_ms == "-"
 
 
 def test_request_id_filter_uses_request_attribute_when_context_missing():
