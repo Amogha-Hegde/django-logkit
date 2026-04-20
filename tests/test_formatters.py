@@ -223,6 +223,25 @@ def test_json_formatter_supports_dynamic_json_fields(monkeypatch):
     assert '"message":' not in rendered
 
 
+def test_json_formatter_auto_includes_structured_event_fields(monkeypatch):
+    formatter = formatters.JsonFormatter(json_fields={"timestamp": "timestamp", "message": "message", "request_id": "request_id"})
+    record = make_record("request_summary")
+    record.event = "request_summary"
+    record.method = "GET"
+    record.path = "/api/health/"
+    record.status_code = 200
+    record.request_id = "req-3"
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    rendered = formatter.format(record)
+
+    assert '"event": "request_summary"' in rendered
+    assert '"method": "GET"' in rendered
+    assert '"path": "/api/health/"' in rendered
+    assert '"status_code": 200' in rendered
+    assert '"request_id": "req-3"' in rendered
+
+
 def test_json_formatter_uses_configured_timezone(monkeypatch):
     formatter = formatters.JsonFormatter(json_fields={"ts": "timestamp", "time": "asctime"}, log_timezone="UTC")
     record = make_record("invoice created")
@@ -281,6 +300,8 @@ def test_json_formatter_parses_django_server_access_log(monkeypatch):
     rendered = formatter.format(record)
 
     assert '"message": "GET /api/health/ HTTP/1.1"' in rendered
+    assert '"method": "GET"' in rendered
+    assert '"path": "/api/health/"' in rendered
     assert '"request_line": "GET /api/health/ HTTP/1.1"' in rendered
     assert '"status_code": 200' in rendered
     assert '"response_size": 15' in rendered

@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from time import perf_counter
 from uuid import uuid4
@@ -151,6 +152,13 @@ def _extract_response_body(response, max_length):
         return None
 
 
+def _calculate_duration_ms(started_at, finished_at):
+    elapsed_ms = (finished_at - started_at) * 1000
+    if elapsed_ms < 0:
+        return 0
+    return max(1, int(math.ceil(elapsed_ms)))
+
+
 def get_header_name(field_name):
     return os.getenv(HEADER_ENV_VARS[field_name], DEFAULT_HEADER_NAMES[field_name]).strip() or DEFAULT_HEADER_NAMES[field_name]
 
@@ -282,7 +290,7 @@ class RequestIdMiddleware:
         try:
             response = self.get_response(request)
         finally:
-            request.duration_ms = max(0, int(round((perf_counter() - started_at) * 1000)))
+            request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
             if response is not None:
                 with bind_log_context(duration_ms=request.duration_ms):
                     self._log_request_response(request, response)

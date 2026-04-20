@@ -137,8 +137,32 @@ def test_request_id_middleware_generates_header_when_missing(monkeypatch):
 
     assert response["X-Request-ID"] == "generated-id"
     assert request.request_id == "generated-id"
-    assert request.duration_ms == 15
+    assert request.duration_ms == 16
     assert get_request_id() is None
+
+
+def test_request_id_middleware_rounds_up_sub_millisecond_duration(monkeypatch):
+    times = iter([15.0, 15.0001])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module, "uuid4", lambda: "generated-id")
+    request = SimpleNamespace(META={})
+
+    response = RequestIdMiddleware(lambda incoming_request: DummyResponse())(request)
+
+    assert response["X-Request-ID"] == "generated-id"
+    assert request.duration_ms == 1
+
+
+def test_request_id_middleware_uses_one_millisecond_when_elapsed_is_zero(monkeypatch):
+    times = iter([15.0, 15.0])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module, "uuid4", lambda: "generated-id")
+    request = SimpleNamespace(META={})
+
+    response = RequestIdMiddleware(lambda incoming_request: DummyResponse())(request)
+
+    assert response["X-Request-ID"] == "generated-id"
+    assert request.duration_ms == 1
 
 
 def test_request_id_filter_uses_env_overridden_meta_headers(monkeypatch):
@@ -228,7 +252,7 @@ def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     assert request.project_id == "project-10"
     assert request.org_id == "org-10"
     assert request.tenant == "tenant-10"
-    assert request.duration_ms == 10
+    assert request.duration_ms == 11
     assert response["X-Correlation-ID"] == "req-10"
 
 
@@ -254,7 +278,7 @@ def test_request_id_middleware_stores_pending_server_context(monkeypatch):
     assert pending_context["span_id"] == "span-12"
     assert pending_context["project_id"] == "project-12"
     assert pending_context["org_id"] == "org-12"
-    assert pending_context["duration_ms"] == 21
+    assert pending_context["duration_ms"] == 22
 
 
 def test_extract_request_headers_redacts_sensitive_values():

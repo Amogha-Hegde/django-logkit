@@ -40,6 +40,7 @@ DEFAULT_JSON_FIELDS = {
 }
 DJANGO_SERVER_LOGGER = "django.server"
 DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
+REQUEST_LINE_PATTERN = re.compile(r"^(?P<method>\S+)\s+(?P<path>\S+)\s+(?P<http_version>\S+)$")
 STRUCTURED_EVENT_FIELDS = ("event", "method", "path", "status_code", "headers", "body")
 
 
@@ -200,6 +201,10 @@ class JsonFormatter(logging.Formatter):
             return socket.gethostname()
         if field_name == "request_id":
             return getattr(record, "request_id", None)
+        if field_name in {"method", "path", "http_version", "status_code", "response_size", "request_line"}:
+            parsed_server_fields = self._parse_django_server_fields(record)
+            if parsed_server_fields is not None and field_name in parsed_server_fields:
+                return parsed_server_fields[field_name]
         return getattr(record, field_name, None)
 
     def _parse_django_server_message(self, record):
@@ -213,11 +218,37 @@ class JsonFormatter(logging.Formatter):
 
         return match.groupdict()
 
+    def _parse_django_server_fields(self, record):
+        parsed_message = self._parse_django_server_message(record)
+        if parsed_message is None:
+            return None
+
+        parsed_fields = dict(parsed_message)
+        request_line_match = REQUEST_LINE_PATTERN.match(parsed_message["request_line"])
+        if request_line_match is not None:
+            parsed_fields.update(request_line_match.groupdict())
+        parsed_fields["status_code"] = int(parsed_message["status_code"])
+        response_size = parsed_message["response_size"]
+        parsed_fields["response_size"] = None if response_size == "-" else int(response_size)
+        return parsed_fields
+
     def _resolve_message(self, record):
         parsed_message = self._parse_django_server_message(record)
         if parsed_message is not None:
             return parsed_message["request_line"]
         return record.getMessage()
+
+    def _structured_event_payload(self, record):
+        event = getattr(record, "event", None)
+        if event is None:
+            return {}
+
+        payload = {"event": event}
+        for field_name in STRUCTURED_EVENT_FIELDS[1:]:
+            value = getattr(record, field_name, None)
+            if value is not None:
+                payload[field_name] = value
+        return payload
 
     def formatTime(self, record, datefmt=None):
         dt = datetime.fromtimestamp(record.created, tz=self.log_timezone)
@@ -232,12 +263,14 @@ class JsonFormatter(logging.Formatter):
             if value is not None:
                 payload[output_key] = value
 
-        parsed_message = self._parse_django_server_message(record)
-        if parsed_message is not None:
-            payload["request_line"] = parsed_message["request_line"]
-            payload["status_code"] = int(parsed_message["status_code"])
-            response_size = parsed_message["response_size"]
-            payload["response_size"] = None if response_size == "-" else int(response_size)
+        for key, value in self._structured_event_payload(record).items():
+            payload.setdefault(key, value)
+
+        parsed_server_fields = self._parse_django_server_fields(record)
+        if parsed_server_fields is not None:
+            for key, value in parsed_server_fields.items():
+                if value is not None:
+                    payload.setdefault(key, value)
 
         service_name = os.getenv("DJANGO_LOGKIT_SERVICE_NAME")
         environment = os.getenv("DJANGO_LOGKIT_ENVIRONMENT")
