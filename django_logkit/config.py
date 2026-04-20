@@ -76,7 +76,7 @@ def _read_config_section(parser, section_name):
 
 
 def _parse_ini_config(config_file_path):
-    parser = configparser.ConfigParser()
+    parser = configparser.ConfigParser(interpolation=None)
     read_files = parser.read(config_file_path)
     if not read_files:
         raise ValueError(f"failed to read config file: {config_file_path}")

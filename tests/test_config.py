@@ -240,6 +240,25 @@ def test_get_logger_config_from_file_reads_ini_config(tmp_path):
     assert logging_config["formatters"][config.COLOR_FORMATTER]["log_colors"]["INFO"] == "green"
 
 
+def test_get_logger_config_from_file_accepts_log_format_percent_placeholders(tmp_path):
+    config_file = tmp_path / "logging.ini"
+    config_file.write_text(
+        "\n".join(
+            [
+                "[django-logkit]",
+                "log_level = INFO",
+                "console_style = plain",
+                "log_format = [%(asctime)s] [%(levelname)s] %(message)s",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    logging_config = config.get_logger_config_from_file(str(config_file))
+
+    assert logging_config["formatters"][config.PLAIN_FORMATTER]["format"] == "[%(asctime)s] [%(levelname)s] %(message)s"
+
+
 @pytest.mark.parametrize(
     ("contents", "message"),
     [
