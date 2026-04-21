@@ -66,10 +66,10 @@ LOGGING = get_logger_config(
 
 Ready-to-copy files:
 
-- [django-logkit.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.sample.ini)
-- [django-logkit.plain.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.plain.sample.ini)
-- [.env.json.example](/Users/amogha/PycharmProjects/django-logkit/.env.json.example)
-- [.env.plain.example](/Users/amogha/PycharmProjects/django-logkit/.env.plain.example)
+- [django-logkit.sample.ini](django-logkit.sample.ini)
+- [django-logkit.plain.sample.ini](django-logkit.plain.sample.ini)
+- [.env.json.example](.env.json.example)
+- [.env.plain.example](.env.plain.example)
 
 ## Advanced
 
@@ -351,10 +351,10 @@ LOGGING = get_logger_config_from_file("/path/to/django-logkit.ini")
 
 Ready-to-copy sample files are included at:
 
-- [django-logkit.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.sample.ini) for JSON-oriented output
-- [django-logkit.plain.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.plain.sample.ini) for plain/color output
-- [.env.json.example](/Users/amogha/PycharmProjects/django-logkit/.env.json.example) for JSON-oriented environment variables
-- [.env.plain.example](/Users/amogha/PycharmProjects/django-logkit/.env.plain.example) for plain/color environment variables
+- [django-logkit.sample.ini](django-logkit.sample.ini) for JSON-oriented output
+- [django-logkit.plain.sample.ini](django-logkit.plain.sample.ini) for plain/color output
+- [.env.json.example](.env.json.example) for JSON-oriented environment variables
+- [.env.plain.example](.env.plain.example) for plain/color environment variables
 
 The file must contain a `[django-logkit]` section. Example:
 
