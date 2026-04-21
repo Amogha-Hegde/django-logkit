@@ -1,6 +1,6 @@
 from .celery import bind_request_id_from_task, build_celery_headers, extract_request_id_from_task
 from .config import get_logger_config, get_logger_config_from_file, get_logger_config_with_file, get_logger_config_without_file
-from .middleware import RequestIdMiddleware
+from .middleware import RequestContextMiddleware, RequestIdMiddleware
 from .request_id import (
     bind_log_context,
     bind_request_id,
@@ -14,6 +14,7 @@ from .request_id import (
 
 
 __all__ = [
+    "RequestContextMiddleware",
     "RequestIdMiddleware",
     "bind_log_context",
     "bind_request_id",

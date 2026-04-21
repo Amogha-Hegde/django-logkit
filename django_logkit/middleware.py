@@ -168,7 +168,7 @@ def get_response_header_name(field_name):
     return _normalize_header_name(header_name)
 
 
-class RequestIdMiddleware:
+class RequestContextMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.header_name = get_header_name("request_id")
@@ -310,3 +310,6 @@ class RequestIdMiddleware:
 
         response[self.response_header_name] = request_id
         return response
+
+
+RequestIdMiddleware = RequestContextMiddleware

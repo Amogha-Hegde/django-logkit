@@ -32,6 +32,7 @@ pip install "django-logkit[json]"
 from pathlib import Path
 
 from django_logkit import (
+    RequestContextMiddleware,
     RequestIdMiddleware,
     bind_log_context,
     bind_request_id,
@@ -338,13 +339,15 @@ Add the middleware if you want request-scoped log context in logs:
 ```python
 MIDDLEWARE = [
     # ...
-    "django_logkit.middleware.RequestIdMiddleware",
+    "django_logkit.middleware.RequestContextMiddleware",
 ]
 ```
 
 Yes, you need to register the middleware in your Django `MIDDLEWARE` setting if you want automatic request-scoped values.
 
 Register it once. If the same middleware is added multiple times, you can get duplicate request / response logs or mismatched request IDs. The middleware now guards against accidental double application on the same request, but it should still appear only once in `MIDDLEWARE`.
+
+`RequestContextMiddleware` is the preferred name because it binds request-scoped context beyond `request_id`. `RequestIdMiddleware` remains available as a backward-compatible alias.
 
 Without the middleware:
 
@@ -367,7 +370,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "your_project.middleware.TenantMiddleware",
-    "django_logkit.middleware.RequestIdMiddleware",
+    "django_logkit.middleware.RequestContextMiddleware",
     # other middleware that should see request_id / trace_id / tenant / user_id
 ]
 ```

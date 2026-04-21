@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import django_logkit.middleware as middleware_module
 from django_logkit.filters import RequestIdFilter
-from django_logkit.middleware import RequestIdMiddleware, _extract_request_headers, _extract_response_headers
+from django_logkit.middleware import RequestContextMiddleware, RequestIdMiddleware, _extract_request_headers, _extract_response_headers
 from django_logkit.request_id import (
     clear_pending_server_log_context,
     get_log_context,
@@ -89,6 +89,10 @@ def test_request_id_filter_uses_request_meta_header_when_context_missing():
 
 class DummyResponse(dict):
     pass
+
+
+def test_request_context_middleware_alias_matches_request_id_middleware():
+    assert RequestContextMiddleware is RequestIdMiddleware
 
 
 def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypatch):
