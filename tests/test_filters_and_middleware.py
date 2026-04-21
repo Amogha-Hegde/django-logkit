@@ -2,7 +2,15 @@ from types import SimpleNamespace
 
 import django_logkit.middleware as middleware_module
 from django_logkit.filters import RequestIdFilter
-from django_logkit.middleware import RequestContextMiddleware, RequestIdMiddleware, _extract_request_headers, _extract_response_headers
+from django_logkit.middleware import (
+    RequestContextMiddleware,
+    RequestIdMiddleware,
+    RequestLogMiddleware,
+    _extract_request_headers,
+    _extract_response_headers,
+    clear_request_context_resolvers,
+    register_request_context_resolver,
+)
 from django_logkit.request_id import (
     clear_pending_server_log_context,
     get_log_context,
@@ -93,6 +101,68 @@ class DummyResponse(dict):
 
 def test_request_context_middleware_alias_matches_request_id_middleware():
     assert RequestContextMiddleware is RequestIdMiddleware
+
+
+def test_request_log_middleware_logs_without_duplication_when_context_middleware_present(monkeypatch):
+    class DummyLogger:
+        def __init__(self):
+            self.calls = []
+
+        def info(self, message, *args, **kwargs):
+            self.calls.append(("info", message, kwargs.get("extra", {})))
+
+        def debug(self, message, *args, **kwargs):
+            self.calls.append(("debug", message, kwargs.get("extra", {})))
+
+    logger = DummyLogger()
+    times = iter([1.0, 1.002, 1.004, 1.006])
+    original_get_logger = middleware_module.logging.getLogger
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(middleware_module.logging, "getLogger", lambda name=None: logger if name == "django.request" else original_get_logger(name))
+    monkeypatch.setenv("DJANGO_LOGKIT_LOG_REQUESTS", "true")
+
+    request = SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-log"}, method="GET", path="/api/health/", get_full_path=lambda: "/api/health/")
+    class Response(DummyResponse):
+        status_code = 200
+
+    middleware = RequestContextMiddleware(RequestLogMiddleware(lambda incoming_request: Response()))
+    response = middleware(request)
+
+    assert response["X-Request-ID"] == "req-log"
+    assert logger.calls == [("info", "request_summary", {"event": "request_summary", "method": "GET", "path": "/api/health/", "status_code": 200})]
+
+
+def test_request_context_middleware_uses_registered_resolvers(monkeypatch):
+    clear_request_context_resolvers()
+    register_request_context_resolver("tenant", lambda request: "tenant-from-resolver")
+    register_request_context_resolver("project_id", lambda request: "project-from-resolver")
+    times = iter([100.0, 100.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(META={})
+
+    try:
+        RequestContextMiddleware(lambda incoming_request: DummyResponse())(request)
+    finally:
+        clear_request_context_resolvers()
+
+    assert request.tenant == "tenant-from-resolver"
+    assert request.project_id == "project-from-resolver"
+
+
+def test_request_context_middleware_uses_opentelemetry_when_headers_missing(monkeypatch):
+    times = iter([100.0, 100.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setattr(
+        middleware_module,
+        "_resolve_otel_trace_context",
+        lambda: ("otel-trace", "otel-span"),
+    )
+    request = SimpleNamespace(META={})
+
+    RequestContextMiddleware(lambda incoming_request: DummyResponse())(request)
+
+    assert request.trace_id == "otel-trace"
+    assert request.span_id == "otel-span"
 
 
 def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypatch):
@@ -258,6 +328,26 @@ def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     assert request.tenant == "tenant-10"
     assert request.duration_ms == 11
     assert response["X-Correlation-ID"] == "req-10"
+
+
+def test_request_context_middleware_propagates_optional_response_headers(monkeypatch):
+    times = iter([20.0, 20.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    monkeypatch.setenv("DJANGO_LOGKIT_PROPAGATE_TRACE_ID", "true")
+    monkeypatch.setenv("DJANGO_LOGKIT_PROPAGATE_PROJECT_ID", "true")
+    request = SimpleNamespace(
+        META={
+            "HTTP_X_REQUEST_ID": "req-14",
+            "HTTP_X_TRACE_ID": "trace-14",
+            "HTTP_X_PROJECT_ID": "project-14",
+        }
+    )
+
+    response = RequestContextMiddleware(lambda incoming_request: DummyResponse())(request)
+
+    assert response["X-Request-ID"] == "req-14"
+    assert response["X-Trace-ID"] == "trace-14"
+    assert response["X-Project-ID"] == "project-14"
 
 
 def test_request_id_middleware_stores_pending_server_context(monkeypatch):

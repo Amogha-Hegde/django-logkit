@@ -159,6 +159,18 @@ def test_get_logger_config_uses_default_log_format_and_colors():
     assert logging_config["formatters"][config.PLAIN_FORMATTER]["log_timezone"] == config.DEFAULT_LOG_TIMEZONE
 
 
+def test_get_logger_config_accepts_text_field_defaults():
+    logging_config = config.get_logger_config(
+        log_level="INFO",
+        enable_file_logging=False,
+        console_style="plain",
+        text_field_defaults={"user_id": "anonymous", "tenant": "public"},
+    )
+
+    assert logging_config["formatters"][config.PLAIN_FORMATTER]["text_field_defaults"] == {"user_id": "anonymous", "tenant": "public"}
+    assert logging_config["formatters"][config.COLOR_FORMATTER]["text_field_defaults"] == {"user_id": "anonymous", "tenant": "public"}
+
+
 def test_get_logger_config_accepts_custom_json_fields():
     logging_config = config.get_logger_config(
         log_level="INFO",
@@ -168,6 +180,29 @@ def test_get_logger_config_accepts_custom_json_fields():
     )
 
     assert logging_config["formatters"][config.JSON_FORMATTER]["json_fields"] == {"ts": "timestamp", "msg": "message"}
+
+
+def test_get_logger_config_accepts_json_field_defaults_and_message_mode():
+    logging_config = config.get_logger_config(
+        log_level="INFO",
+        enable_file_logging=False,
+        console_style="json",
+        json_field_defaults={"tenant": "-", "user_id": None},
+        django_server_message_mode="event",
+    )
+
+    assert logging_config["formatters"][config.JSON_FORMATTER]["json_field_defaults"] == {"tenant": "-", "user_id": None}
+    assert logging_config["formatters"][config.JSON_FORMATTER]["django_server_message_mode"] == "event"
+
+
+def test_get_logger_config_can_disable_django_server_logs():
+    logging_config = config.get_logger_config(
+        log_level="INFO",
+        enable_file_logging=False,
+        include_django_server_logs=False,
+    )
+
+    assert "django.server" not in logging_config["loggers"]
 
 
 def test_get_logger_config_accepts_log_timezone():
@@ -207,10 +242,12 @@ def test_get_logger_config_from_file_reads_ini_config(tmp_path):
                 "console_style = json",
                 "file_style = plain",
                 "include_request_id = true",
+                "include_django_server_logs = false",
                 "app_loggers = payments, notifications",
                 "log_backup = 7",
                 "log_when = D",
                 "log_timezone = UTC",
+                "django_server_message_mode = event",
                 "",
                 "[logger_levels]",
                 "payments = DEBUG",
@@ -220,8 +257,16 @@ def test_get_logger_config_from_file_reads_ini_config(tmp_path):
                 "info = green",
                 "",
                 "[json_fields]",
-                "ts = timestamp",
+                "FuncName = funcName",
                 "msg = message",
+                "",
+                "[json_field_defaults]",
+                "tenant = -",
+                "user_id = null",
+                "",
+                "[text_field_defaults]",
+                "user_id = anonymous",
+                "tenant = public",
             ]
         ),
         encoding="utf-8",
@@ -236,7 +281,11 @@ def test_get_logger_config_from_file_reads_ini_config(tmp_path):
     assert logging_config["handlers"]["file"]["when"] == "D"
     assert logging_config["loggers"]["payments"]["level"] == "DEBUG"
     assert logging_config["loggers"]["notifications"]["level"] == "INFO"
-    assert logging_config["formatters"][config.JSON_FORMATTER]["json_fields"] == {"ts": "timestamp", "msg": "message"}
+    assert "django.server" not in logging_config["loggers"]
+    assert logging_config["formatters"][config.JSON_FORMATTER]["json_fields"] == {"FuncName": "funcName", "msg": "message"}
+    assert logging_config["formatters"][config.JSON_FORMATTER]["json_field_defaults"] == {"tenant": "-", "user_id": None}
+    assert logging_config["formatters"][config.PLAIN_FORMATTER]["text_field_defaults"] == {"user_id": "anonymous", "tenant": "public"}
+    assert logging_config["formatters"][config.JSON_FORMATTER]["django_server_message_mode"] == "event"
     assert logging_config["formatters"][config.COLOR_FORMATTER]["log_colors"]["INFO"] == "green"
 
 
@@ -286,7 +335,14 @@ def test_get_logger_config_from_file_validation_errors(tmp_path, contents, messa
         ({"log_level": "INFO", "json_fields": []}, "json_fields must be a dictionary of output key to record field name"),
         ({"log_level": "INFO", "json_fields": {"": "message"}}, "json_fields keys must be non-empty strings"),
         ({"log_level": "INFO", "json_fields": {"msg": ""}}, "json_fields values must be non-empty strings"),
+        ({"log_level": "INFO", "json_field_defaults": []}, "json_field_defaults must be a dictionary of output key to fallback value"),
+        ({"log_level": "INFO", "json_field_defaults": {"": "-"}}, "json_field_defaults keys must be non-empty strings"),
+        ({"log_level": "INFO", "text_field_defaults": []}, "text_field_defaults must be a dictionary of record field to fallback value"),
+        ({"log_level": "INFO", "text_field_defaults": {"": "-"}}, "text_field_defaults keys must be non-empty strings"),
         ({"log_level": "INFO", "log_timezone": ""}, "log_timezone must be a non-empty string or None"),
+        ({"log_level": "INFO", "include_django_server_logs": "yes"}, "include_django_server_logs must be a boolean"),
+        ({"log_level": "INFO", "django_server_message_mode": ""}, "django_server_message_mode must be a non-empty string"),
+        ({"log_level": "INFO", "django_server_message_mode": "weird"}, "django_server_message_mode must be one of: request_line, event"),
         ({"log_level": "INFO", "logger_levels": []}, "logger_levels must be a dictionary of logger name to log level"),
         ({"log_level": "INFO", "log_when": "", "base_dir": Path("."), "log_file_name": "app.log"}, "log_when must be a non-empty string"),
     ],

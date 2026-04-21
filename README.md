@@ -4,7 +4,7 @@
 
 - plain, color, or JSON output
 - optional rotating file logging
-- request ID injection via middleware + logging filter
+- request / trace / tenant context via middleware + logging filter
 - per-logger level overrides
 - Celery-oriented default logger coverage
 
@@ -26,6 +26,53 @@ Optional high-performance JSON support:
 pip install "django-logkit[json]"
 ```
 
+## Basic
+
+Use the package in two steps:
+
+1. Register `RequestContextMiddleware` in Django `MIDDLEWARE`
+2. Configure `LOGGING` with `get_logger_config(...)`
+
+Quick JSON setup:
+
+```python
+from pathlib import Path
+
+from django_logkit import RequestContextMiddleware, get_logger_config
+
+BASE_DIR = Path(__file__).resolve().parent
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django_logkit.middleware.RequestContextMiddleware",
+]
+
+LOGGING = get_logger_config(
+    log_level="INFO",
+    base_dir=BASE_DIR,
+    enable_file_logging=True,
+    log_file_name="application.log",
+    console_style="json",
+    file_style="json",
+    include_request_id=True,
+    include_django_server_logs=False,
+    text_field_defaults={"user_id": "anonymous", "tenant": "public"},
+    json_field_defaults={"tenant": "-", "user_id": "-"},
+)
+```
+
+Ready-to-copy files:
+
+- [django-logkit.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.sample.ini)
+- [django-logkit.plain.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.plain.sample.ini)
+- [.env.json.example](/Users/amogha/PycharmProjects/django-logkit/.env.json.example)
+- [.env.plain.example](/Users/amogha/PycharmProjects/django-logkit/.env.plain.example)
+
+## Advanced
+
 ## Public API
 
 ```python
@@ -34,23 +81,34 @@ from pathlib import Path
 from django_logkit import (
     RequestContextMiddleware,
     RequestIdMiddleware,
+    RequestLogMiddleware,
+    bind_drf_context,
     bind_log_context,
+    bind_log_context_from_task,
+    bind_request_context,
     bind_request_id,
     bind_request_id_from_task,
+    bind_trace_context,
     build_celery_headers,
+    clear_request_context_resolvers,
+    extract_log_context_from_task,
     get_log_context,
     get_logger_config,
     get_logger_config_from_file,
     get_logger_config_with_file,
     get_logger_config_without_file,
+    register_request_context_resolver,
+    wrap_with_drf_context,
     wrap_with_log_context,
+    wrap_with_request_context,
     wrap_with_request_id,
+    wrap_with_trace_context,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
 ```
 
-## Main Config Function
+## Config Reference
 
 ```python
 from pathlib import Path
@@ -65,9 +123,12 @@ LOGGING = get_logger_config(
     console_style="json",
     file_style="json",
     include_request_id=True,
+    include_django_server_logs=False,
     log_format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
     log_colors={"INFO": "green", "ERROR": "red"},
     json_fields={"ts": "timestamp", "level": "levelname", "msg": "message", "rid": "request_id"},
+    json_field_defaults={"tenant": "-", "user_id": "-"},
+    django_server_message_mode="event",
     log_timezone="UTC",
     app_loggers=["payments", "notifications"],
     logger_levels={
@@ -90,9 +151,13 @@ Arguments:
 - `app_loggers`: additional logger names to configure
 - `logger_levels`: per-logger level overrides
 - `include_request_id`: adds request-context filter support to handlers
+- `include_django_server_logs`: include or suppress Django's `django.server` access logger
 - `log_format`: optional override for the plain/color formatter string
 - `log_colors`: optional override for color formatter level-to-color mapping
 - `json_fields`: optional override for JSON output fields as `{output_key: record_field_name}`
+- `text_field_defaults`: optional fallback values for plain/color record fields
+- `json_field_defaults`: optional fallback values for configured JSON output keys
+- `django_server_message_mode`: `request_line` or `event` for normalized `django.server` JSON `message`
 - `log_timezone`: optional timezone applied to plain, color, and JSON timestamps; defaults to `UTC`, and also accepts values like `local` or `Asia/Kolkata`
 
 ## Logger Behavior
@@ -288,6 +353,8 @@ Ready-to-copy sample files are included at:
 
 - [django-logkit.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.sample.ini) for JSON-oriented output
 - [django-logkit.plain.sample.ini](/Users/amogha/PycharmProjects/django-logkit/django-logkit.plain.sample.ini) for plain/color output
+- [.env.json.example](/Users/amogha/PycharmProjects/django-logkit/.env.json.example) for JSON-oriented environment variables
+- [.env.plain.example](/Users/amogha/PycharmProjects/django-logkit/.env.plain.example) for plain/color environment variables
 
 The file must contain a `[django-logkit]` section. Example:
 
@@ -300,10 +367,12 @@ log_file_name = application.log
 console_style = json
 file_style = plain
 include_request_id = true
+include_django_server_logs = false
 app_loggers = payments, notifications
 log_backup = 7
 log_when = D
 log_timezone = UTC
+django_server_message_mode = event
 
 [logger_levels]
 payments = DEBUG
@@ -317,14 +386,24 @@ error = red
 ts = timestamp
 msg = message
 rid = request_id
+
+[json_field_defaults]
+tenant = -
+user_id = null
+
+[text_field_defaults]
+user_id = anonymous
+tenant = public
 ```
 
 Supported sections:
 
-- `[django-logkit]` for scalar options such as `log_level`, `base_dir`, `console_style`, `file_style`, `include_request_id`, `log_format`, and `log_timezone`
+- `[django-logkit]` for scalar options such as `log_level`, `base_dir`, `console_style`, `file_style`, `include_request_id`, `include_django_server_logs`, `django_server_message_mode`, `log_format`, and `log_timezone`
 - `[logger_levels]` for per-logger level overrides
 - `[log_colors]` for color formatter mappings
 - `[json_fields]` for JSON output field mappings
+- `[text_field_defaults]` for plain/color formatter fallback values
+- `[json_field_defaults]` for JSON fallback values; use `null` to map to JSON `null`
 
 Notes:
 
@@ -332,7 +411,7 @@ Notes:
 - `app_loggers` accepts comma-separated or newline-separated logger names
 - boolean values accept `true/false`, `yes/no`, `on/off`, or `1/0`
 
-## Request Context Middleware
+## Advanced Middleware
 
 Add the middleware if you want request-scoped log context in logs:
 
@@ -348,6 +427,7 @@ Yes, you need to register the middleware in your Django `MIDDLEWARE` setting if 
 Register it once. If the same middleware is added multiple times, you can get duplicate request / response logs or mismatched request IDs. The middleware now guards against accidental double application on the same request, but it should still appear only once in `MIDDLEWARE`.
 
 `RequestContextMiddleware` is the preferred name because it binds request-scoped context beyond `request_id`. `RequestIdMiddleware` remains available as a backward-compatible alias.
+`RequestLogMiddleware` is also available when you want request / response logging decoupled from context binding.
 
 Without the middleware:
 
@@ -394,6 +474,9 @@ Behavior:
 - `duration_ms` is measured automatically for the request lifecycle
 - every field is optional; you can use any one of them without the others
 - the request ID is written back to the response header using the configured request ID header name
+- `trace_id`, `span_id`, `project_id`, `org_id`, and `tenant` can also be written back to response headers when their propagation flags are enabled
+- `trace_id` / `span_id` fall back to the active OpenTelemetry span when headers are absent and OpenTelemetry is installed
+- custom field resolvers can be registered for `request_id`, `trace_id`, `span_id`, `project_id`, `org_id`, `tenant`, and `user_id`
 - optional request / response logging can be enabled independently through environment variables
 
 Default request header names:
@@ -424,6 +507,11 @@ Optional request / response logging flags:
 - `DJANGO_LOGKIT_REQUEST_LOGGER`
 - `DJANGO_LOGKIT_BODY_MAX_LENGTH`
 - `DJANGO_LOGKIT_REDACT_HEADERS`
+- `DJANGO_LOGKIT_PROPAGATE_TRACE_ID`
+- `DJANGO_LOGKIT_PROPAGATE_SPAN_ID`
+- `DJANGO_LOGKIT_PROPAGATE_PROJECT_ID`
+- `DJANGO_LOGKIT_PROPAGATE_ORG_ID`
+- `DJANGO_LOGKIT_PROPAGATE_TENANT`
 
 Example:
 
@@ -448,6 +536,16 @@ export DJANGO_LOGKIT_REQUEST_LOGGER=django.request
 export DJANGO_LOGKIT_BODY_MAX_LENGTH=4096
 ```
 
+Custom request-context resolvers:
+
+```python
+from django_logkit import register_request_context_resolver
+
+
+register_request_context_resolver("tenant", lambda request: getattr(request, "account_slug", None))
+register_request_context_resolver("project_id", lambda request: request.headers.get("X-Project"))
+```
+
 Behavior:
 
 - all request / response logging is disabled by default
@@ -469,6 +567,7 @@ Request / response log events:
 Plain / color formatter behavior:
 
 - middleware-emitted request / response logs are rendered as readable event lines
+- use `text_field_defaults` when you want placeholders such as `%(user_id)s` or `%(tenant)s` to render with custom fallback values
 - for example, plain output will look like:
 
 ```text
@@ -484,7 +583,18 @@ For threads, executors, background jobs, or standalone log enrichment, bind only
 ```python
 from concurrent.futures import ThreadPoolExecutor
 
-from django_logkit import bind_log_context, bind_request_id, wrap_with_log_context, wrap_with_request_id
+from django_logkit import (
+    bind_drf_context,
+    bind_log_context,
+    bind_request_context,
+    bind_request_id,
+    bind_trace_context,
+    wrap_with_drf_context,
+    wrap_with_log_context,
+    wrap_with_request_context,
+    wrap_with_request_id,
+    wrap_with_trace_context,
+)
 
 
 def do_work(order_id):
@@ -503,6 +613,18 @@ with bind_log_context(trace_id="trace-123"):
     logger.info("trace-only log")
 
 
+with bind_trace_context("trace-456", "span-456"):
+    logger.info("trace + span log")
+
+
+with bind_request_context(request_id="req-789", tenant="tenant-acme", project_id="project-1"):
+    logger.info("request context log")
+
+
+with bind_drf_context(view="OrderViewSet", action="list", serializer="OrderSerializer"):
+    logger.info("drf log")
+
+
 with bind_log_context(duration_ms=18):
     logger.info("duration-only log")
 
@@ -511,6 +633,10 @@ executor.submit(
     wrap_with_log_context(do_work, tenant="tenant-acme", user_id="user-42"),
     3,
 )
+
+executor.submit(wrap_with_trace_context(do_work, trace_id="trace-789", span_id="span-789"), 4)
+executor.submit(wrap_with_request_context(do_work, request_id="req-999", tenant="tenant-zeta"), 5)
+executor.submit(wrap_with_drf_context(do_work, view="InvoiceViewSet", action="retrieve"), 6)
 ```
 
 ## JSON Logging
@@ -550,6 +676,7 @@ Optional service metadata can be added with environment variables:
 If `orjson` is installed through the optional `json` extra, JSON logs are serialized with `orjson`. Otherwise the formatter falls back to Python's standard `json` module.
 
 By default the JSON formatter emits a fixed set of fields, but you can override that with `json_fields`.
+Configured keys preserve case when loaded from INI files.
 
 Example:
 
@@ -586,6 +713,9 @@ Supported dynamic field values include any standard `logging.LogRecord` attribut
 - `user_id`
 - `tenant`
 - `duration_ms`
+- `drf_view`
+- `drf_action`
+- `drf_serializer`
 
 Common examples from Python logging:
 
@@ -608,6 +738,7 @@ Common examples from Python logging:
 - `processName`
 
 For `json_fields`, use the raw field names above, not `%`-style placeholders.
+Use `json_field_defaults` when you want configured keys to stay present even when a record value is missing.
 
 Example:
 
@@ -711,17 +842,17 @@ Default configured logger names include:
 
 That gives worker and task execution logs the same handler and formatter setup as the rest of the project.
 
-To propagate request IDs into Celery tasks:
+To propagate request, trace, and span context into Celery tasks:
 
 ```python
-from django_logkit import bind_request_id_from_task, build_celery_headers
+from django_logkit import bind_log_context_from_task, bind_request_id_from_task, build_celery_headers
 
 some_task.apply_async(args=[123], headers=build_celery_headers())
 
 
 @shared_task(bind=True)
 def some_task(self, order_id):
-    with bind_request_id_from_task(self):
+    with bind_log_context_from_task(self):
         logger.info("processing order", extra={"order_id": order_id})
 ```
 
@@ -739,7 +870,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django_logkit.middleware.RequestIdMiddleware",
+    "django_logkit.middleware.RequestContextMiddleware",
 ]
 
 LOGGING = get_logger_config(
@@ -750,6 +881,7 @@ LOGGING = get_logger_config(
     console_style="json",
     file_style="json",
     include_request_id=True,
+    include_django_server_logs=False,
     app_loggers=["payments", "notifications"],
     logger_levels={
         "django.db.backends": "WARNING",

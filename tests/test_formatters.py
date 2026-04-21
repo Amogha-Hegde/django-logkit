@@ -45,6 +45,13 @@ def test_safe_plain_formatter_uses_configured_timezone():
     assert formatter.format(record).startswith("1970-01-01 00:00:00.000+00:00 hello")
 
 
+def test_safe_plain_formatter_applies_text_field_defaults():
+    formatter = formatters.SafePlainFormatter("%(user_id)s %(tenant)s", text_field_defaults={"user_id": "anonymous", "tenant": "public"})
+    record = make_record()
+
+    assert formatter.format(record) == "anonymous public"
+
+
 def test_safe_plain_formatter_renders_structured_event_message():
     formatter = formatters.SafePlainFormatter("%(message)s [%(request_id)s]")
     record = make_record("ignored")
@@ -109,6 +116,23 @@ def test_safe_colored_formatter_uses_colorlog_when_available(monkeypatch):
     record = make_record()
 
     assert formatter.format(record) == "colored:hello:-"
+
+
+def test_safe_colored_formatter_applies_text_field_defaults(monkeypatch):
+    class DummyColoredFormatter:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def format(self, record):
+            return f"{record.user_id}:{record.tenant}"
+
+    dummy_module = types.SimpleNamespace(ColoredFormatter=DummyColoredFormatter)
+    monkeypatch.setitem(sys.modules, "colorlog", dummy_module)
+
+    formatter = formatters.SafeColoredFormatter("%(message)s", text_field_defaults={"user_id": "anonymous", "tenant": "public"})
+    record = make_record()
+
+    assert formatter.format(record) == "anonymous:public"
 
 
 def test_safe_colored_formatter_renders_structured_event_when_colorlog_available(monkeypatch):
@@ -223,6 +247,20 @@ def test_json_formatter_supports_dynamic_json_fields(monkeypatch):
     assert '"message":' not in rendered
 
 
+def test_json_formatter_applies_json_field_defaults(monkeypatch):
+    formatter = formatters.JsonFormatter(
+        json_fields={"tenant": "tenant", "user_id": "user_id"},
+        json_field_defaults={"tenant": "-", "user_id": None},
+    )
+    record = make_record("invoice created")
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    rendered = formatter.format(record)
+
+    assert '"tenant": "-"' in rendered
+    assert '"user_id": null' not in rendered
+
+
 def test_json_formatter_auto_includes_structured_event_fields(monkeypatch):
     formatter = formatters.JsonFormatter(json_fields={"timestamp": "timestamp", "message": "message", "request_id": "request_id"})
     record = make_record("request_summary")
@@ -307,3 +345,22 @@ def test_json_formatter_parses_django_server_access_log(monkeypatch):
     assert '"status_code": 200' in rendered
     assert '"response_size": 15' in rendered
     assert '\\"GET /api/health/ HTTP/1.1\\" 200 15' not in rendered
+
+
+def test_json_formatter_can_normalize_django_server_message_to_event(monkeypatch):
+    formatter = formatters.JsonFormatter(django_server_message_mode="event")
+    monkeypatch.setattr(formatters, "orjson", None)
+    record = logging.LogRecord(
+        name="django.server",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=213,
+        msg='"%s" %s %s',
+        args=("GET /api/health/ HTTP/1.1", "200", "15"),
+        exc_info=None,
+        func="log_message",
+    )
+
+    rendered = formatter.format(record)
+
+    assert '"message": "request_summary"' in rendered

@@ -13,6 +13,9 @@ LOG_RECORD_DEFAULTS = {
     "user_id": "-",
     "tenant": "-",
     "duration_ms": "-",
+    "drf_view": "-",
+    "drf_action": "-",
+    "drf_serializer": "-",
 }
 DJANGO_SERVER_LOGGER = "django.server"
 
@@ -47,6 +50,9 @@ def _resolve_request_attribute(request, field_name):
         if user is not None and getattr(user, "is_authenticated", False):
             return getattr(user, "pk", None) or getattr(user, "id", None)
         return None
+
+    if field_name in {"drf_view", "drf_action", "drf_serializer"}:
+        return getattr(request, field_name, None)
 
     return getattr(request, field_name, None)
 

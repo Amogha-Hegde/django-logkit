@@ -1,7 +1,13 @@
 from types import SimpleNamespace
 
-from django_logkit.celery import bind_request_id_from_task, build_celery_headers, extract_request_id_from_task
-from django_logkit.request_id import get_request_id, reset_request_id, set_request_id
+from django_logkit.celery import (
+    bind_log_context_from_task,
+    bind_request_id_from_task,
+    build_celery_headers,
+    extract_log_context_from_task,
+    extract_request_id_from_task,
+)
+from django_logkit.request_id import bind_log_context, get_log_context, get_request_id, reset_request_id, set_request_id
 
 
 def test_build_celery_headers_uses_explicit_request_id():
@@ -14,6 +20,11 @@ def test_build_celery_headers_uses_current_request_id():
         assert build_celery_headers() == {"x-request-id": "req-2"}
     finally:
         reset_request_id(token)
+
+
+def test_build_celery_headers_includes_trace_and_span():
+    with bind_log_context(trace_id="trace-1", span_id="span-1"):
+        assert build_celery_headers() == {"x-trace-id": "trace-1", "x-span-id": "span-1"}
 
 
 def test_build_celery_headers_returns_empty_when_unset():
@@ -38,6 +49,21 @@ def test_extract_request_id_from_task_returns_none_when_missing():
     assert extract_request_id_from_task(task) is None
 
 
+def test_extract_log_context_from_task_reads_request_trace_and_span_headers():
+    task = SimpleNamespace(
+        request=SimpleNamespace(
+            headers={"x-request-id": "req-7", "x-trace-id": "trace-7", "x-span-id": "span-7"},
+            request_id="fallback",
+        )
+    )
+
+    assert extract_log_context_from_task(task) == {
+        "request_id": "req-7",
+        "trace_id": "trace-7",
+        "span_id": "span-7",
+    }
+
+
 def test_bind_request_id_from_task_sets_and_resets():
     task = SimpleNamespace(request=SimpleNamespace(headers={"x-request-id": "req-5"}))
 
@@ -54,3 +80,17 @@ def test_bind_request_id_from_task_uses_explicit_request_id():
         assert get_request_id() == "req-6"
 
     assert get_request_id() is None
+
+
+def test_bind_log_context_from_task_sets_request_trace_and_span():
+    task = SimpleNamespace(
+        request=SimpleNamespace(headers={"x-request-id": "req-8", "x-trace-id": "trace-8", "x-span-id": "span-8"})
+    )
+
+    with bind_log_context_from_task(task) as values:
+        assert values["request_id"] == "req-8"
+        assert values["trace_id"] == "trace-8"
+        assert values["span_id"] == "span-8"
+        assert get_log_context()["trace_id"] == "trace-8"
+
+    assert get_log_context()["trace_id"] is None

@@ -15,6 +15,8 @@ DEFAULT_LOG_WHEN = "W0"
 DEFAULT_FILE_ENCODING = "utf-8"
 DEFAULT_LOG_STYLE = "plain"
 DEFAULT_LOG_TIMEZONE = "UTC"
+DEFAULT_INCLUDE_DJANGO_SERVER_LOGS = True
+DEFAULT_DJANGO_SERVER_MESSAGE_MODE = "request_line"
 DEFAULT_APP_LOGGERS = (
     "billiard",
     "celery",
@@ -47,6 +49,8 @@ CONFIG_SECTION = "django-logkit"
 LOGGER_LEVELS_SECTION = "logger_levels"
 LOG_COLORS_SECTION = "log_colors"
 JSON_FIELDS_SECTION = "json_fields"
+JSON_FIELD_DEFAULTS_SECTION = "json_field_defaults"
+TEXT_FIELD_DEFAULTS_SECTION = "text_field_defaults"
 
 
 def _parse_config_bool(value, parameter_name):
@@ -77,6 +81,7 @@ def _read_config_section(parser, section_name):
 
 def _parse_ini_config(config_file_path):
     parser = configparser.ConfigParser(interpolation=None)
+    parser.optionxform = str
     read_files = parser.read(config_file_path)
     if not read_files:
         raise ValueError(f"failed to read config file: {config_file_path}")
@@ -99,8 +104,9 @@ def _parse_ini_config(config_file_path):
         "log_when",
         "log_format",
         "log_timezone",
+        "django_server_message_mode",
     }
-    bool_options = {"enable_file_logging", "include_request_id"}
+    bool_options = {"enable_file_logging", "include_request_id", "include_django_server_logs"}
     int_options = {"log_backup"}
 
     for option_name in string_options:
@@ -129,6 +135,20 @@ def _parse_ini_config(config_file_path):
     json_fields = _read_config_section(parser, JSON_FIELDS_SECTION)
     if json_fields:
         config_kwargs["json_fields"] = json_fields
+
+    json_field_defaults = _read_config_section(parser, JSON_FIELD_DEFAULTS_SECTION)
+    if json_field_defaults:
+        config_kwargs["json_field_defaults"] = {
+            key: (None if value.strip().lower() == "null" else value)
+            for key, value in json_field_defaults.items()
+        }
+
+    text_field_defaults = _read_config_section(parser, TEXT_FIELD_DEFAULTS_SECTION)
+    if text_field_defaults:
+        config_kwargs["text_field_defaults"] = {
+            key: (None if value.strip().lower() == "null" else value)
+            for key, value in text_field_defaults.items()
+        }
 
     return config_kwargs
 
@@ -231,6 +251,38 @@ def _validate_json_fields(json_fields):
     return normalized_json_fields
 
 
+def _validate_json_field_defaults(json_field_defaults):
+    if json_field_defaults is None:
+        return None
+
+    if not isinstance(json_field_defaults, dict):
+        raise ValueError("json_field_defaults must be a dictionary of output key to fallback value")
+
+    normalized_defaults = {}
+    for output_key, value in json_field_defaults.items():
+        if not isinstance(output_key, str) or not output_key.strip():
+            raise ValueError("json_field_defaults keys must be non-empty strings")
+        normalized_defaults[output_key.strip()] = value
+
+    return normalized_defaults
+
+
+def _validate_text_field_defaults(text_field_defaults):
+    if text_field_defaults is None:
+        return None
+
+    if not isinstance(text_field_defaults, dict):
+        raise ValueError("text_field_defaults must be a dictionary of record field to fallback value")
+
+    normalized_defaults = {}
+    for field_name, value in text_field_defaults.items():
+        if not isinstance(field_name, str) or not field_name.strip():
+            raise ValueError("text_field_defaults keys must be non-empty strings")
+        normalized_defaults[field_name.strip()] = value
+
+    return normalized_defaults
+
+
 def _validate_log_timezone(log_timezone):
     if log_timezone is None:
         return DEFAULT_LOG_TIMEZONE
@@ -239,6 +291,26 @@ def _validate_log_timezone(log_timezone):
         raise ValueError("log_timezone must be a non-empty string or None")
 
     return log_timezone.strip()
+
+
+def _validate_include_django_server_logs(include_django_server_logs):
+    if include_django_server_logs is None:
+        return DEFAULT_INCLUDE_DJANGO_SERVER_LOGS
+    if not isinstance(include_django_server_logs, bool):
+        raise ValueError("include_django_server_logs must be a boolean")
+    return include_django_server_logs
+
+
+def _validate_django_server_message_mode(django_server_message_mode):
+    if django_server_message_mode is None:
+        return DEFAULT_DJANGO_SERVER_MESSAGE_MODE
+    if not isinstance(django_server_message_mode, str) or not django_server_message_mode.strip():
+        raise ValueError("django_server_message_mode must be a non-empty string")
+
+    normalized_mode = django_server_message_mode.strip().lower()
+    if normalized_mode not in {"request_line", "event"}:
+        raise ValueError("django_server_message_mode must be one of: request_line, event")
+    return normalized_mode
 
 
 def _validate_base_dir(base_dir):
@@ -316,7 +388,7 @@ def _get_formatter_name(log_style):
     return PLAIN_FORMATTER
 
 
-def _build_formatters(include_request_id, log_format, log_colors, json_fields, log_timezone):
+def _build_formatters(include_request_id, log_format, log_colors, json_fields, json_field_defaults, text_field_defaults, log_timezone, django_server_message_mode):
     base_format = _validate_log_format(log_format)
     plain_format = base_format + REQUEST_ID_SUFFIX if include_request_id else base_format
     normalized_log_timezone = _validate_log_timezone(log_timezone)
@@ -326,16 +398,20 @@ def _build_formatters(include_request_id, log_format, log_colors, json_fields, l
             "format": "%(log_color)s" + plain_format,
             "log_colors": _validate_log_colors(log_colors),
             "log_timezone": normalized_log_timezone,
+            "text_field_defaults": _validate_text_field_defaults(text_field_defaults),
         },
         PLAIN_FORMATTER: {
             "()": "django_logkit.formatters.SafePlainFormatter",
             "format": plain_format,
             "log_timezone": normalized_log_timezone,
+            "text_field_defaults": _validate_text_field_defaults(text_field_defaults),
         },
         JSON_FORMATTER: {
             "()": "django_logkit.formatters.JsonFormatter",
             "json_fields": _validate_json_fields(json_fields),
+            "json_field_defaults": _validate_json_field_defaults(json_field_defaults),
             "log_timezone": normalized_log_timezone,
+            "django_server_message_mode": _validate_django_server_message_mode(django_server_message_mode),
         },
     }
 
@@ -391,7 +467,7 @@ def _build_handlers(
     return handlers
 
 
-def _build_named_loggers(default_log_level, active_handlers, logger_names, logger_levels=None):
+def _build_named_loggers(default_log_level, active_handlers, logger_names, logger_levels=None, include_django_server_logs=True):
     logger_levels = logger_levels or {}
     logger_config = {
         name: {
@@ -401,11 +477,12 @@ def _build_named_loggers(default_log_level, active_handlers, logger_names, logge
         }
         for name in logger_names
     }
-    logger_config[DJANGO_SERVER] = {
-        "handlers": list(active_handlers),
-        "level": logger_levels.get(DJANGO_SERVER, default_log_level),
-        "propagate": False,
-    }
+    if include_django_server_logs:
+        logger_config[DJANGO_SERVER] = {
+            "handlers": list(active_handlers),
+            "level": logger_levels.get(DJANGO_SERVER, default_log_level),
+            "propagate": False,
+        }
     return logger_config
 
 
@@ -419,10 +496,14 @@ def _build_logging_config(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    include_django_server_logs=DEFAULT_INCLUDE_DJANGO_SERVER_LOGS,
     log_format=None,
     log_colors=None,
     json_fields=None,
+    json_field_defaults=None,
+    text_field_defaults=None,
     log_timezone=None,
+    django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
     normalized_log_level = _validate_log_level(log_level)
     active_handlers = [CONSOLE_HANDLER]
@@ -436,6 +517,7 @@ def _build_logging_config(
         default_level=normalized_log_level,
         logger_levels=logger_levels,
     )
+    normalized_include_django_server_logs = _validate_include_django_server_logs(include_django_server_logs)
 
     return {
         "version": 1,
@@ -446,7 +528,10 @@ def _build_logging_config(
             log_format=log_format,
             log_colors=log_colors,
             json_fields=json_fields,
+            json_field_defaults=json_field_defaults,
+            text_field_defaults=text_field_defaults,
             log_timezone=log_timezone,
+            django_server_message_mode=django_server_message_mode,
         ),
         "handlers": _build_handlers(
             console_formatter=_get_formatter_name(console_style),
@@ -463,6 +548,7 @@ def _build_logging_config(
                 active_handlers=active_handlers,
                 logger_names=_get_logger_names(app_loggers, normalized_logger_levels),
                 logger_levels=normalized_logger_levels,
+                include_django_server_logs=normalized_include_django_server_logs,
             ),
         },
     }
@@ -488,10 +574,14 @@ def get_logger_config_with_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    include_django_server_logs=DEFAULT_INCLUDE_DJANGO_SERVER_LOGS,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
+    json_field_defaults=None,
+    text_field_defaults=None,
     log_timezone=DEFAULT_LOG_TIMEZONE,
+    django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
@@ -505,10 +595,14 @@ def get_logger_config_with_file(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        include_django_server_logs=include_django_server_logs,
         log_format=log_format,
         log_colors=log_colors,
         json_fields=json_fields,
+        json_field_defaults=json_field_defaults,
+        text_field_defaults=text_field_defaults,
         log_timezone=log_timezone,
+        django_server_message_mode=django_server_message_mode,
     )
 
 
@@ -518,10 +612,14 @@ def get_logger_config_without_file(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    include_django_server_logs=DEFAULT_INCLUDE_DJANGO_SERVER_LOGS,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
+    json_field_defaults=None,
+    text_field_defaults=None,
     log_timezone=DEFAULT_LOG_TIMEZONE,
+    django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
@@ -530,10 +628,14 @@ def get_logger_config_without_file(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        include_django_server_logs=include_django_server_logs,
         log_format=log_format,
         log_colors=log_colors,
         json_fields=json_fields,
+        json_field_defaults=json_field_defaults,
+        text_field_defaults=text_field_defaults,
         log_timezone=log_timezone,
+        django_server_message_mode=django_server_message_mode,
     )
 
 
@@ -549,10 +651,14 @@ def get_logger_config(
     app_loggers=None,
     logger_levels=None,
     include_request_id=False,
+    include_django_server_logs=DEFAULT_INCLUDE_DJANGO_SERVER_LOGS,
     log_format=DEFAULT_LOG_FORMAT,
     log_colors=DEFAULT_LOG_COLORS,
     json_fields=None,
+    json_field_defaults=None,
+    text_field_defaults=None,
     log_timezone=DEFAULT_LOG_TIMEZONE,
+    django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
     file_name = _resolve_file_logging(
         enable_file_logging=enable_file_logging,
@@ -570,10 +676,14 @@ def get_logger_config(
         app_loggers=app_loggers,
         logger_levels=logger_levels,
         include_request_id=include_request_id,
+        include_django_server_logs=include_django_server_logs,
         log_format=log_format,
         log_colors=log_colors,
         json_fields=json_fields,
+        json_field_defaults=json_field_defaults,
+        text_field_defaults=text_field_defaults,
         log_timezone=log_timezone,
+        django_server_message_mode=django_server_message_mode,
     )
 
 

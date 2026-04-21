@@ -37,12 +37,26 @@ DEFAULT_JSON_FIELDS = {
     "user_id": "user_id",
     "tenant": "tenant",
     "duration_ms": "duration_ms",
+    "drf_view": "drf_view",
+    "drf_action": "drf_action",
+    "drf_serializer": "drf_serializer",
 }
 DJANGO_SERVER_LOGGER = "django.server"
 DJANGO_SERVER_EVENT = "request_summary"
+VALID_DJANGO_SERVER_MESSAGE_MODES = {"request_line", "event"}
 DJANGO_SERVER_MESSAGE_PATTERN = re.compile(r'^"(?P<request_line>.+)" (?P<status_code>\d{3}) (?P<response_size>\S+)$')
 REQUEST_LINE_PATTERN = re.compile(r"^(?P<method>\S+)\s+(?P<path>\S+)\s+(?P<http_version>\S+)$")
 STRUCTURED_EVENT_FIELDS = ("event", "method", "path", "status_code", "headers", "body")
+DEFAULT_TEXT_FIELD_DEFAULTS = {
+    "request_id": "-",
+    "trace_id": "-",
+    "span_id": "-",
+    "project_id": "-",
+    "org_id": "-",
+    "user_id": None,
+    "tenant": "-",
+    "duration_ms": "-",
+}
 
 
 def _strip_color_fields(fmt):
@@ -81,9 +95,12 @@ def _format_structured_event_message(record):
 
 
 class SafePlainFormatter(logging.Formatter):
-    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_timezone=None):
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_timezone=None, text_field_defaults=None):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
         self.log_timezone = _resolve_timezone(log_timezone)
+        self.text_field_defaults = dict(DEFAULT_TEXT_FIELD_DEFAULTS)
+        if text_field_defaults:
+            self.text_field_defaults.update(text_field_defaults)
 
     def formatTime(self, record, datefmt=None):
         dt = datetime.fromtimestamp(record.created, tz=self.log_timezone)
@@ -107,28 +124,15 @@ class SafePlainFormatter(logging.Formatter):
             record.args = original_args
 
     def format(self, record):
-        if not hasattr(record, "request_id"):
-            record.request_id = "-"
-        if not hasattr(record, "trace_id"):
-            record.trace_id = "-"
-        if not hasattr(record, "span_id"):
-            record.span_id = "-"
-        if not hasattr(record, "project_id"):
-            record.project_id = "-"
-        if not hasattr(record, "org_id"):
-            record.org_id = "-"
-        if not hasattr(record, "user_id"):
-            record.user_id = None
-        if not hasattr(record, "tenant"):
-            record.tenant = "-"
-        if not hasattr(record, "duration_ms"):
-            record.duration_ms = "-"
+        for field_name, value in self.text_field_defaults.items():
+            if not hasattr(record, field_name):
+                setattr(record, field_name, value)
         return self._format_with_structured_message(record)
 
 
 class SafeColoredFormatter(SafePlainFormatter):
-    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_colors=None, log_timezone=None):
-        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate, log_timezone=log_timezone)
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_colors=None, log_timezone=None, text_field_defaults=None):
+        super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate, log_timezone=log_timezone, text_field_defaults=text_field_defaults)
         try:
             from colorlog import ColoredFormatter
         except ImportError:
@@ -143,6 +147,7 @@ class SafeColoredFormatter(SafePlainFormatter):
                 style=style,
                 validate=validate,
                 log_timezone=log_timezone,
+                text_field_defaults=text_field_defaults,
             )
         else:
             self._formatter = ColoredFormatter(
@@ -155,22 +160,9 @@ class SafeColoredFormatter(SafePlainFormatter):
             self._formatter.formatTime = self.formatTime
 
     def format(self, record):
-        if not hasattr(record, "request_id"):
-            record.request_id = "-"
-        if not hasattr(record, "trace_id"):
-            record.trace_id = "-"
-        if not hasattr(record, "span_id"):
-            record.span_id = "-"
-        if not hasattr(record, "project_id"):
-            record.project_id = "-"
-        if not hasattr(record, "org_id"):
-            record.org_id = "-"
-        if not hasattr(record, "user_id"):
-            record.user_id = None
-        if not hasattr(record, "tenant"):
-            record.tenant = "-"
-        if not hasattr(record, "duration_ms"):
-            record.duration_ms = "-"
+        for field_name, value in self.text_field_defaults.items():
+            if not hasattr(record, field_name):
+                setattr(record, field_name, value)
         structured_message = _format_structured_event_message(record)
         if structured_message is not None:
             original_msg = record.msg
@@ -186,10 +178,14 @@ class SafeColoredFormatter(SafePlainFormatter):
 
 
 class JsonFormatter(logging.Formatter):
-    def __init__(self, json_fields=None, log_timezone=None):
+    def __init__(self, json_fields=None, json_field_defaults=None, log_timezone=None, django_server_message_mode="request_line"):
         super().__init__()
         self.json_fields = dict(json_fields or DEFAULT_JSON_FIELDS)
+        self.json_field_defaults = dict(json_field_defaults or {})
         self.log_timezone = _resolve_timezone(log_timezone)
+        if django_server_message_mode not in VALID_DJANGO_SERVER_MESSAGE_MODES:
+            raise ValueError("django_server_message_mode must be one of: request_line, event")
+        self.django_server_message_mode = django_server_message_mode
 
     def _resolve_field_value(self, record, field_name):
         if field_name == "timestamp":
@@ -236,6 +232,8 @@ class JsonFormatter(logging.Formatter):
     def _resolve_message(self, record):
         parsed_message = self._parse_django_server_message(record)
         if parsed_message is not None:
+            if self.django_server_message_mode == "event":
+                return DJANGO_SERVER_EVENT
             return parsed_message["request_line"]
         return record.getMessage()
 
@@ -270,6 +268,8 @@ class JsonFormatter(logging.Formatter):
         payload = {}
         for output_key, field_name in self.json_fields.items():
             value = self._resolve_field_value(record, field_name)
+            if value is None and output_key in self.json_field_defaults:
+                value = self.json_field_defaults[output_key]
             if value is not None:
                 payload[output_key] = value
 

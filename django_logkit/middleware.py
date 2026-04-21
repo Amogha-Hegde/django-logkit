@@ -29,6 +29,52 @@ def _resolve_tenant(request):
     return getattr(request, "tenant_id", None) or request.META.get(get_header_name("tenant"))
 
 
+def _resolve_otel_trace_context():
+    try:
+        from opentelemetry import trace
+    except ImportError:  # pragma: no cover - optional dependency
+        return None, None
+
+    span = trace.get_current_span()
+    if span is None:
+        return None, None
+
+    span_context = getattr(span, "get_span_context", lambda: None)()
+    if span_context is None or not getattr(span_context, "is_valid", False):
+        return None, None
+
+    trace_id = f"{span_context.trace_id:032x}" if getattr(span_context, "trace_id", 0) else None
+    span_id = f"{span_context.span_id:016x}" if getattr(span_context, "span_id", 0) else None
+    return trace_id, span_id
+
+
+def register_request_context_resolver(field_name, resolver):
+    if field_name not in CUSTOM_CONTEXT_RESOLVERS:
+        raise ValueError(f"unsupported request context field: {field_name}")
+    if not callable(resolver):
+        raise ValueError("resolver must be callable")
+    CUSTOM_CONTEXT_RESOLVERS[field_name].append(resolver)
+
+
+def clear_request_context_resolvers(field_name=None):
+    if field_name is None:
+        for resolvers in CUSTOM_CONTEXT_RESOLVERS.values():
+            resolvers.clear()
+        return
+
+    if field_name not in CUSTOM_CONTEXT_RESOLVERS:
+        raise ValueError(f"unsupported request context field: {field_name}")
+    CUSTOM_CONTEXT_RESOLVERS[field_name].clear()
+
+
+def _resolve_registered_context_value(field_name, request):
+    for resolver in CUSTOM_CONTEXT_RESOLVERS[field_name]:
+        value = resolver(request)
+        if value is not None:
+            return value
+    return None
+
+
 HEADER_ENV_VARS = {
     "request_id": "DJANGO_LOGKIT_REQUEST_ID_HEADER",
     "trace_id": "DJANGO_LOGKIT_TRACE_ID_HEADER",
@@ -53,14 +99,41 @@ LOG_FLAG_ENV_VARS = {
     "request_body": "DJANGO_LOGKIT_LOG_REQUEST_BODY",
     "response_body": "DJANGO_LOGKIT_LOG_RESPONSE_BODY",
 }
+RESPONSE_HEADER_PROPAGATION_ENV_VARS = {
+    "trace_id": "DJANGO_LOGKIT_PROPAGATE_TRACE_ID",
+    "span_id": "DJANGO_LOGKIT_PROPAGATE_SPAN_ID",
+    "project_id": "DJANGO_LOGKIT_PROPAGATE_PROJECT_ID",
+    "org_id": "DJANGO_LOGKIT_PROPAGATE_ORG_ID",
+    "tenant": "DJANGO_LOGKIT_PROPAGATE_TENANT",
+}
 REQUEST_LOGGER_ENV_VAR = "DJANGO_LOGKIT_REQUEST_LOGGER"
 BODY_MAX_LENGTH_ENV_VAR = "DJANGO_LOGKIT_BODY_MAX_LENGTH"
 REQUEST_GUARD_ATTR = "_django_logkit_request_middleware_applied"
+REQUEST_LOG_GUARD_ATTR = "_django_logkit_request_log_middleware_applied"
 REQUEST_SUMMARY_EVENT = "request_summary"
 REQUEST_HEADERS_EVENT = "request_headers"
 RESPONSE_HEADERS_EVENT = "response_headers"
 REQUEST_BODY_EVENT = "request_body"
 RESPONSE_BODY_EVENT = "response_body"
+REQUEST_CONTEXT_FIELDS = (
+    "request_id",
+    "trace_id",
+    "span_id",
+    "project_id",
+    "org_id",
+    "tenant",
+    "user_id",
+    "duration_ms",
+)
+CUSTOM_CONTEXT_RESOLVERS = {
+    "request_id": [],
+    "trace_id": [],
+    "span_id": [],
+    "project_id": [],
+    "org_id": [],
+    "tenant": [],
+    "user_id": [],
+}
 
 
 def _get_env_flag(env_var, default=False):
@@ -168,16 +241,94 @@ def get_response_header_name(field_name):
     return _normalize_header_name(header_name)
 
 
+def _get_optional_response_fields_to_propagate():
+    return tuple(
+        field_name
+        for field_name, env_var in RESPONSE_HEADER_PROPAGATION_ENV_VARS.items()
+        if _get_env_flag(env_var)
+    )
+
+
+def _set_request_context_attributes(request, context):
+    for field_name, value in context.items():
+        setattr(request, field_name, value)
+
+
+def _bind_request_context(context):
+    return bind_log_context(
+        request_id=context.get("request_id"),
+        trace_id=context.get("trace_id"),
+        span_id=context.get("span_id"),
+        project_id=context.get("project_id"),
+        org_id=context.get("org_id"),
+        tenant=context.get("tenant"),
+        user_id=context.get("user_id"),
+    )
+
+
+def _set_pending_server_context(context):
+    set_pending_server_log_context({field_name: context.get(field_name) for field_name in REQUEST_CONTEXT_FIELDS})
+
+
+def _propagate_response_headers(response, request, fields):
+    for field_name in fields:
+        field_value = getattr(request, field_name, None)
+        if field_value is None:
+            continue
+
+        response_header_name = get_response_header_name(field_name)
+        if response_header_name not in response:
+            response[response_header_name] = field_value
+
+
+def _resolve_request_context(request, generate_request_id=True):
+    meta = getattr(request, "META", {})
+    request_id = (
+        _resolve_registered_context_value("request_id", request)
+        or getattr(request, "request_id", None)
+        or meta.get(get_header_name("request_id"))
+    )
+    if request_id is None and generate_request_id:
+        request_id = str(uuid4())
+
+    trace_id = (
+        _resolve_registered_context_value("trace_id", request)
+        or getattr(request, "trace_id", None)
+        or meta.get(get_header_name("trace_id"))
+    )
+    span_id = (
+        _resolve_registered_context_value("span_id", request)
+        or getattr(request, "span_id", None)
+        or meta.get(get_header_name("span_id"))
+    )
+    if trace_id is None or span_id is None:
+        otel_trace_id, otel_span_id = _resolve_otel_trace_context()
+        trace_id = trace_id or otel_trace_id
+        span_id = span_id or otel_span_id
+
+    return {
+        "request_id": request_id,
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "project_id": (
+            _resolve_registered_context_value("project_id", request)
+            or getattr(request, "project_id", None)
+            or meta.get(get_header_name("project_id"))
+        ),
+        "org_id": (
+            _resolve_registered_context_value("org_id", request)
+            or getattr(request, "org_id", None)
+            or meta.get(get_header_name("org_id"))
+        ),
+        "tenant": _resolve_registered_context_value("tenant", request) or _resolve_tenant(request),
+        "user_id": _resolve_registered_context_value("user_id", request) or _resolve_user_id(request),
+        "duration_ms": getattr(request, "duration_ms", None),
+    }
+
+
 class RequestContextMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
-        self.header_name = get_header_name("request_id")
-        self.trace_header_name = get_header_name("trace_id")
-        self.span_header_name = get_header_name("span_id")
-        self.project_header_name = get_header_name("project_id")
-        self.org_header_name = get_header_name("org_id")
-        self.tenant_header_name = get_header_name("tenant")
-        self.response_header_name = get_response_header_name("request_id")
         self.request_logger = logging.getLogger(os.getenv(REQUEST_LOGGER_ENV_VAR, "django.request"))
         self.log_request_summary = _get_env_flag(LOG_FLAG_ENV_VARS["request_summary"])
         self.log_request_headers = _get_env_flag(LOG_FLAG_ENV_VARS["request_headers"])
@@ -185,6 +336,7 @@ class RequestContextMiddleware:
         self.log_request_body = _get_env_flag(LOG_FLAG_ENV_VARS["request_body"])
         self.log_response_body = _get_env_flag(LOG_FLAG_ENV_VARS["response_body"])
         self.body_max_length = _get_body_max_length()
+        self.response_header_fields = ("request_id",) + _get_optional_response_fields_to_propagate()
 
     def _log_request_response(self, request, response):
         path = getattr(request, "get_full_path", lambda: getattr(request, "path", "/"))()
@@ -251,64 +403,56 @@ class RequestContextMiddleware:
     def __call__(self, request):
         if getattr(request, REQUEST_GUARD_ATTR, False):
             response = self.get_response(request)
-            if hasattr(request, "request_id") and self.response_header_name not in response:
-                response[self.response_header_name] = request.request_id
+            _propagate_response_headers(response, request, self.response_header_fields)
             return response
 
         setattr(request, REQUEST_GUARD_ATTR, True)
         clear_pending_server_log_context()
         started_at = perf_counter()
-        request_id = request.META.get(self.header_name) or str(uuid4())
-        trace_id = request.META.get(self.trace_header_name)
-        span_id = request.META.get(self.span_header_name)
-        project_id = request.META.get(self.project_header_name)
-        org_id = request.META.get(self.org_header_name)
-        tenant = _resolve_tenant(request)
-        if tenant is None:
-            tenant = request.META.get(self.tenant_header_name)
-        user_id = _resolve_user_id(request)
+        context = _resolve_request_context(request, generate_request_id=True)
+        _set_request_context_attributes(request, context)
 
-        request.request_id = request_id
-        request.trace_id = trace_id
-        request.span_id = span_id
-        request.project_id = project_id
-        request.org_id = org_id
-        request.tenant = tenant
-        request.user_id = user_id
-
-        binding = bind_log_context(
-            request_id=request_id,
-            trace_id=trace_id,
-            span_id=span_id,
-            project_id=project_id,
-            org_id=org_id,
-            tenant=tenant,
-            user_id=user_id,
-        )
+        binding = _bind_request_context(context)
         binding.__enter__()
         response = None
         try:
             response = self.get_response(request)
         finally:
             request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
+            context["duration_ms"] = request.duration_ms
             if response is not None:
-                with bind_log_context(duration_ms=request.duration_ms):
-                    self._log_request_response(request, response)
-            set_pending_server_log_context(
-                {
-                    "request_id": request_id,
-                    "trace_id": trace_id,
-                    "span_id": span_id,
-                    "project_id": project_id,
-                    "org_id": org_id,
-                    "tenant": tenant,
-                    "user_id": user_id,
-                    "duration_ms": request.duration_ms,
-                }
-            )
+                if not getattr(request, REQUEST_LOG_GUARD_ATTR, False):
+                    with bind_log_context(duration_ms=request.duration_ms):
+                        self._log_request_response(request, response)
+            _set_pending_server_context(context)
             binding.__exit__(None, None, None)
 
-        response[self.response_header_name] = request_id
+        _propagate_response_headers(response, request, self.response_header_fields)
+        return response
+
+
+class RequestLogMiddleware(RequestContextMiddleware):
+    def __call__(self, request):
+        if getattr(request, REQUEST_LOG_GUARD_ATTR, False):
+            return self.get_response(request)
+
+        setattr(request, REQUEST_LOG_GUARD_ATTR, True)
+        started_at = perf_counter()
+        response = None
+        try:
+            response = self.get_response(request)
+        finally:
+            if getattr(request, "duration_ms", None) is None:
+                request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
+            context = _resolve_request_context(request, generate_request_id=False)
+            context["duration_ms"] = request.duration_ms
+            _set_request_context_attributes(request, context)
+            if response is not None:
+                with _bind_request_context(context), bind_log_context(duration_ms=request.duration_ms):
+                    self._log_request_response(request, response)
+            _set_pending_server_context(context)
+
+        _propagate_response_headers(response, request, self.response_header_fields)
         return response
 
 
