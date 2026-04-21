@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+from threading import RLock
 from time import perf_counter
 from uuid import uuid4
 
@@ -21,7 +22,11 @@ def _resolve_user_id(request):
     return None
 
 
-def _resolve_tenant(request):
+def resolve_user_id_from_request(request):
+    return _resolve_user_id(request)
+
+
+def resolve_tenant_from_request(request):
     if hasattr(request, "tenant") and getattr(request, "tenant") is not None:
         tenant = request.tenant
         return getattr(tenant, "slug", None) or getattr(tenant, "id", None) or getattr(tenant, "pk", None) or tenant
@@ -53,26 +58,37 @@ def register_request_context_resolver(field_name, resolver):
         raise ValueError(f"unsupported request context field: {field_name}")
     if not callable(resolver):
         raise ValueError("resolver must be callable")
-    CUSTOM_CONTEXT_RESOLVERS[field_name].append(resolver)
+    with _CONTEXT_RESOLVER_LOCK:
+        CUSTOM_CONTEXT_RESOLVERS[field_name].append(resolver)
 
 
 def clear_request_context_resolvers(field_name=None):
     if field_name is None:
-        for resolvers in CUSTOM_CONTEXT_RESOLVERS.values():
-            resolvers.clear()
+        with _CONTEXT_RESOLVER_LOCK:
+            for resolvers in CUSTOM_CONTEXT_RESOLVERS.values():
+                resolvers.clear()
         return
 
     if field_name not in CUSTOM_CONTEXT_RESOLVERS:
         raise ValueError(f"unsupported request context field: {field_name}")
-    CUSTOM_CONTEXT_RESOLVERS[field_name].clear()
+    with _CONTEXT_RESOLVER_LOCK:
+        CUSTOM_CONTEXT_RESOLVERS[field_name].clear()
 
 
-def _resolve_registered_context_value(field_name, request):
-    for resolver in CUSTOM_CONTEXT_RESOLVERS[field_name]:
+def _resolve_registered_context_value(field_name, request, resolvers):
+    for resolver in resolvers[field_name]:
         value = resolver(request)
         if value is not None:
             return value
     return None
+
+
+def _get_context_resolver_snapshot():
+    with _CONTEXT_RESOLVER_LOCK:
+        return {
+            field_name: tuple(resolvers)
+            for field_name, resolvers in CUSTOM_CONTEXT_RESOLVERS.items()
+        }
 
 
 HEADER_ENV_VARS = {
@@ -92,6 +108,7 @@ DEFAULT_HEADER_NAMES = {
     "tenant": "HTTP_X_TENANT",
 }
 DEFAULT_REDACTED_HEADERS = {"authorization", "cookie", "set-cookie", "x-api-key", "proxy-authorization"}
+DEFAULT_HEADER_ABBREVIATIONS = {"API", "AWS", "B3", "GCP", "HTTP", "HTTPS", "ID", "IP", "OIDC", "TLS", "URI", "URL", "UUID"}
 LOG_FLAG_ENV_VARS = {
     "request_summary": "DJANGO_LOGKIT_LOG_REQUESTS",
     "request_headers": "DJANGO_LOGKIT_LOG_REQUEST_HEADERS",
@@ -134,6 +151,7 @@ CUSTOM_CONTEXT_RESOLVERS = {
     "tenant": [],
     "user_id": [],
 }
+_CONTEXT_RESOLVER_LOCK = RLock()
 
 
 def _get_env_flag(env_var, default=False):
@@ -154,7 +172,7 @@ def _get_body_max_length():
 def _normalize_header_name(header_name):
     if header_name.startswith("HTTP_"):
         header_name = header_name[5:]
-    return "-".join(part if part in {"ID", "B3"} else part.title() for part in header_name.split("_"))
+    return "-".join(part if part in DEFAULT_HEADER_ABBREVIATIONS else part.title() for part in header_name.split("_"))
 
 
 def _get_redacted_headers():
@@ -164,8 +182,7 @@ def _get_redacted_headers():
     return {header.strip().lower() for header in custom_headers.split(",") if header.strip()}
 
 
-def _redact_headers(headers):
-    redacted_headers = _get_redacted_headers()
+def _redact_headers(headers, redacted_headers):
     redacted = {}
     for key, value in headers.items():
         if key.lower() in redacted_headers:
@@ -175,26 +192,28 @@ def _redact_headers(headers):
     return redacted
 
 
-def _extract_request_headers(request):
+def _extract_request_headers(request, redacted_headers=None):
+    redacted_headers = _get_redacted_headers() if redacted_headers is None else redacted_headers
     headers = getattr(request, "headers", None)
     if headers is not None:
-        return _redact_headers(dict(headers))
+        return _redact_headers(dict(headers), redacted_headers)
 
     meta = getattr(request, "META", {})
     extracted = {}
     for key, value in meta.items():
         if key.startswith("HTTP_") or key in {"CONTENT_TYPE", "CONTENT_LENGTH"}:
             extracted[_normalize_header_name(key)] = value
-    return _redact_headers(extracted)
+    return _redact_headers(extracted, redacted_headers)
 
 
-def _extract_response_headers(response):
+def _extract_response_headers(response, redacted_headers=None):
+    redacted_headers = _get_redacted_headers() if redacted_headers is None else redacted_headers
     headers = getattr(response, "headers", None)
     if headers is not None:
-        return _redact_headers(dict(headers))
+        return _redact_headers(dict(headers), redacted_headers)
 
     if hasattr(response, "items"):
-        return _redact_headers(dict(response.items()))
+        return _redact_headers(dict(response.items()), redacted_headers)
 
     return {}
 
@@ -281,10 +300,10 @@ def _propagate_response_headers(response, request, fields):
             response[response_header_name] = field_value
 
 
-def _resolve_request_context(request, generate_request_id=True):
+def _resolve_request_context(request, resolvers, generate_request_id=True):
     meta = getattr(request, "META", {})
     request_id = (
-        _resolve_registered_context_value("request_id", request)
+        _resolve_registered_context_value("request_id", request, resolvers)
         or getattr(request, "request_id", None)
         or meta.get(get_header_name("request_id"))
     )
@@ -292,12 +311,12 @@ def _resolve_request_context(request, generate_request_id=True):
         request_id = str(uuid4())
 
     trace_id = (
-        _resolve_registered_context_value("trace_id", request)
+        _resolve_registered_context_value("trace_id", request, resolvers)
         or getattr(request, "trace_id", None)
         or meta.get(get_header_name("trace_id"))
     )
     span_id = (
-        _resolve_registered_context_value("span_id", request)
+        _resolve_registered_context_value("span_id", request, resolvers)
         or getattr(request, "span_id", None)
         or meta.get(get_header_name("span_id"))
     )
@@ -311,17 +330,17 @@ def _resolve_request_context(request, generate_request_id=True):
         "trace_id": trace_id,
         "span_id": span_id,
         "project_id": (
-            _resolve_registered_context_value("project_id", request)
+            _resolve_registered_context_value("project_id", request, resolvers)
             or getattr(request, "project_id", None)
             or meta.get(get_header_name("project_id"))
         ),
         "org_id": (
-            _resolve_registered_context_value("org_id", request)
+            _resolve_registered_context_value("org_id", request, resolvers)
             or getattr(request, "org_id", None)
             or meta.get(get_header_name("org_id"))
         ),
-        "tenant": _resolve_registered_context_value("tenant", request) or _resolve_tenant(request),
-        "user_id": _resolve_registered_context_value("user_id", request) or _resolve_user_id(request),
+        "tenant": _resolve_registered_context_value("tenant", request, resolvers) or resolve_tenant_from_request(request),
+        "user_id": _resolve_registered_context_value("user_id", request, resolvers) or resolve_user_id_from_request(request),
         "duration_ms": getattr(request, "duration_ms", None),
     }
 
@@ -337,6 +356,8 @@ class RequestContextMiddleware:
         self.log_response_body = _get_env_flag(LOG_FLAG_ENV_VARS["response_body"])
         self.body_max_length = _get_body_max_length()
         self.response_header_fields = ("request_id",) + _get_optional_response_fields_to_propagate()
+        self.redacted_headers = _get_redacted_headers()
+        self.context_resolvers = _get_context_resolver_snapshot()
 
     def _log_request_response(self, request, response):
         path = getattr(request, "get_full_path", lambda: getattr(request, "path", "/"))()
@@ -358,7 +379,7 @@ class RequestContextMiddleware:
                 REQUEST_HEADERS_EVENT,
                 extra={
                     "event": REQUEST_HEADERS_EVENT,
-                    "headers": _extract_request_headers(request),
+                    "headers": _extract_request_headers(request, self.redacted_headers),
                     "method": method,
                     "path": path,
                 },
@@ -380,7 +401,7 @@ class RequestContextMiddleware:
                 RESPONSE_HEADERS_EVENT,
                 extra={
                     "event": RESPONSE_HEADERS_EVENT,
-                    "headers": _extract_response_headers(response),
+                    "headers": _extract_response_headers(response, self.redacted_headers),
                     "method": method,
                     "path": path,
                     "status_code": status_code,
@@ -409,23 +430,20 @@ class RequestContextMiddleware:
         setattr(request, REQUEST_GUARD_ATTR, True)
         clear_pending_server_log_context()
         started_at = perf_counter()
-        context = _resolve_request_context(request, generate_request_id=True)
+        context = _resolve_request_context(request, self.context_resolvers, generate_request_id=True)
         _set_request_context_attributes(request, context)
 
-        binding = _bind_request_context(context)
-        binding.__enter__()
         response = None
-        try:
-            response = self.get_response(request)
-        finally:
-            request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
-            context["duration_ms"] = request.duration_ms
-            if response is not None:
-                if not getattr(request, REQUEST_LOG_GUARD_ATTR, False):
+        with _bind_request_context(context):
+            try:
+                response = self.get_response(request)
+            finally:
+                request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
+                context["duration_ms"] = request.duration_ms
+                if response is not None and not getattr(request, REQUEST_LOG_GUARD_ATTR, False):
                     with bind_log_context(duration_ms=request.duration_ms):
                         self._log_request_response(request, response)
-            _set_pending_server_context(context)
-            binding.__exit__(None, None, None)
+                _set_pending_server_context(context)
 
         _propagate_response_headers(response, request, self.response_header_fields)
         return response
@@ -444,7 +462,7 @@ class RequestLogMiddleware(RequestContextMiddleware):
         finally:
             if getattr(request, "duration_ms", None) is None:
                 request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
-            context = _resolve_request_context(request, generate_request_id=False)
+            context = _resolve_request_context(request, self.context_resolvers, generate_request_id=False)
             context["duration_ms"] = request.duration_ms
             _set_request_context_attributes(request, context)
             if response is not None:
@@ -452,7 +470,8 @@ class RequestLogMiddleware(RequestContextMiddleware):
                     self._log_request_response(request, response)
             _set_pending_server_context(context)
 
-        _propagate_response_headers(response, request, self.response_header_fields)
+        if response is not None:
+            _propagate_response_headers(response, request, self.response_header_fields)
         return response
 
 

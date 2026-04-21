@@ -24,8 +24,10 @@ from .request_id import (
     wrap_with_trace_context,
 )
 
+__version__ = "0.1.0"
 
 __all__ = [
+    "__version__",
     "RequestLogMiddleware",
     "RequestContextMiddleware",
     "RequestIdMiddleware",

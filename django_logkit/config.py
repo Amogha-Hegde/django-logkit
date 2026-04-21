@@ -1,4 +1,5 @@
 import configparser
+import warnings
 from pathlib import Path
 
 
@@ -583,6 +584,11 @@ def get_logger_config_with_file(
     log_timezone=DEFAULT_LOG_TIMEZONE,
     django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
+    warnings.warn(
+        "get_logger_config_with_file() is legacy; prefer get_logger_config() with console_style/file_style.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     console_style = "color" if log_color_console else "plain"
     file_style = "color" if log_color_file else "plain"
     return _build_logging_config(
@@ -621,6 +627,11 @@ def get_logger_config_without_file(
     log_timezone=DEFAULT_LOG_TIMEZONE,
     django_server_message_mode=DEFAULT_DJANGO_SERVER_MESSAGE_MODE,
 ):
+    warnings.warn(
+        "get_logger_config_without_file() is legacy; prefer get_logger_config() with console_style.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     console_style = "color" if log_color else "plain"
     return _build_logging_config(
         log_level=log_level,

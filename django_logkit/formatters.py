@@ -5,7 +5,7 @@ import re
 import socket
 import warnings
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
     import orjson
@@ -78,7 +78,10 @@ def _resolve_timezone(log_timezone):
     if normalized_log_timezone.lower() == "local":
         return datetime.now().astimezone().tzinfo
 
-    return ZoneInfo(normalized_log_timezone)
+    try:
+        return ZoneInfo(normalized_log_timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"unknown log_timezone: {normalized_log_timezone}") from exc
 
 
 def _format_structured_event_message(record):
@@ -150,14 +153,22 @@ class SafeColoredFormatter(SafePlainFormatter):
                 text_field_defaults=text_field_defaults,
             )
         else:
-            self._formatter = ColoredFormatter(
+            class _TimezoneAwareColoredFormatter(ColoredFormatter):
+                def __init__(self, parent, **kwargs):
+                    super().__init__(**kwargs)
+                    self._parent = parent
+
+                def formatTime(self, record, datefmt=None):
+                    return self._parent.formatTime(record, datefmt)
+
+            self._formatter = _TimezoneAwareColoredFormatter(
+                self,
                 fmt=fmt,
                 datefmt=datefmt,
                 style=style,
                 validate=validate,
                 log_colors=log_colors,
             )
-            self._formatter.formatTime = self.formatTime
 
     def format(self, record):
         for field_name, value in self.text_field_defaults.items():
@@ -183,6 +194,7 @@ class JsonFormatter(logging.Formatter):
         self.json_fields = dict(json_fields or DEFAULT_JSON_FIELDS)
         self.json_field_defaults = dict(json_field_defaults or {})
         self.log_timezone = _resolve_timezone(log_timezone)
+        self.hostname = socket.gethostname()
         if django_server_message_mode not in VALID_DJANGO_SERVER_MESSAGE_MODES:
             raise ValueError("django_server_message_mode must be one of: request_line, event")
         self.django_server_message_mode = django_server_message_mode
@@ -195,7 +207,7 @@ class JsonFormatter(logging.Formatter):
         if field_name == "message":
             return self._resolve_message(record)
         if field_name == "hostname":
-            return socket.gethostname()
+            return self.hostname
         if field_name == "request_id":
             return getattr(record, "request_id", None)
         if field_name in {"method", "path", "http_version", "status_code", "response_size", "request_line"}:

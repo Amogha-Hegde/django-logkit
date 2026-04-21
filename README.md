@@ -10,6 +10,14 @@
 
 ## Install
 
+Local checkout:
+
+```bash
+pip install -e .
+```
+
+Published package:
+
 ```bash
 pip install django-logkit
 ```
@@ -428,6 +436,7 @@ Register it once. If the same middleware is added multiple times, you can get du
 
 `RequestContextMiddleware` is the preferred name because it binds request-scoped context beyond `request_id`. `RequestIdMiddleware` remains available as a backward-compatible alias.
 `RequestLogMiddleware` is also available when you want request / response logging decoupled from context binding.
+The middleware implementation is sync-only today; on ASGI deployments Django will run it through its sync middleware path.
 
 Without the middleware:
 
@@ -842,7 +851,7 @@ Default configured logger names include:
 
 That gives worker and task execution logs the same handler and formatter setup as the rest of the project.
 
-To propagate request, trace, and span context into Celery tasks:
+To propagate request context into Celery tasks:
 
 ```python
 from django_logkit import bind_log_context_from_task, bind_request_id_from_task, build_celery_headers

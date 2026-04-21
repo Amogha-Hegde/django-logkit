@@ -62,23 +62,25 @@ def test_get_logger_config_enables_file_logging_from_log_file_name(tmp_path):
 
 
 def test_get_logger_config_with_file_wrapper(tmp_path):
-    logging_config = config.get_logger_config_with_file(
-        base_dir=tmp_path,
-        log_level="INFO",
-        log_file_name="wrapper.log",
-        log_color_console=False,
-        log_color_file=True,
-    )
+    with pytest.warns(DeprecationWarning, match="legacy"):
+        logging_config = config.get_logger_config_with_file(
+            base_dir=tmp_path,
+            log_level="INFO",
+            log_file_name="wrapper.log",
+            log_color_console=False,
+            log_color_file=True,
+        )
 
     assert logging_config["handlers"]["console"]["formatter"] == config.PLAIN_FORMATTER
     assert logging_config["handlers"]["file"]["formatter"] == config.COLOR_FORMATTER
 
 
 def test_get_logger_config_without_file_wrapper():
-    logging_config = config.get_logger_config_without_file(
-        log_level="INFO",
-        log_color=True,
-    )
+    with pytest.warns(DeprecationWarning, match="legacy"):
+        logging_config = config.get_logger_config_without_file(
+            log_level="INFO",
+            log_color=True,
+        )
 
     assert logging_config["handlers"]["console"]["formatter"] == config.COLOR_FORMATTER
     assert "file" not in logging_config["handlers"]

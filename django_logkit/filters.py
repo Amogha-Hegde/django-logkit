@@ -1,6 +1,6 @@
 import logging
 
-from .middleware import get_header_name
+from .middleware import get_header_name, resolve_tenant_from_request, resolve_user_id_from_request
 from .request_id import clear_pending_server_log_context, get_log_context, get_pending_server_log_context
 
 
@@ -36,20 +36,10 @@ def _resolve_request_attribute(request, field_name):
     if field_name == "org_id":
         return getattr(request, "org_id", None) or meta.get(get_header_name("org_id"))
     if field_name == "tenant":
-        tenant = getattr(request, "tenant", None)
-        if tenant is not None:
-            return getattr(tenant, "slug", None) or getattr(tenant, "id", None) or getattr(tenant, "pk", None) or tenant
-        return getattr(request, "tenant_id", None) or meta.get(get_header_name("tenant"))
+        return resolve_tenant_from_request(request)
 
     if field_name == "user_id":
-        user_id = getattr(request, "user_id", None)
-        if user_id is not None:
-            return user_id
-
-        user = getattr(request, "user", None)
-        if user is not None and getattr(user, "is_authenticated", False):
-            return getattr(user, "pk", None) or getattr(user, "id", None)
-        return None
+        return resolve_user_id_from_request(request)
 
     if field_name in {"drf_view", "drf_action", "drf_serializer"}:
         return getattr(request, field_name, None)

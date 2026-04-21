@@ -27,6 +27,16 @@ def test_build_celery_headers_includes_trace_and_span():
         assert build_celery_headers() == {"x-trace-id": "trace-1", "x-span-id": "span-1"}
 
 
+def test_build_celery_headers_includes_extended_context_fields():
+    with bind_log_context(project_id="project-1", org_id="org-1", tenant="tenant-1", user_id="user-1"):
+        assert build_celery_headers() == {
+            "x-project-id": "project-1",
+            "x-org-id": "org-1",
+            "x-tenant": "tenant-1",
+            "x-user-id": "user-1",
+        }
+
+
 def test_build_celery_headers_returns_empty_when_unset():
     assert build_celery_headers() == {}
 
@@ -61,6 +71,10 @@ def test_extract_log_context_from_task_reads_request_trace_and_span_headers():
         "request_id": "req-7",
         "trace_id": "trace-7",
         "span_id": "span-7",
+        "project_id": None,
+        "org_id": None,
+        "tenant": None,
+        "user_id": None,
     }
 
 
@@ -84,13 +98,27 @@ def test_bind_request_id_from_task_uses_explicit_request_id():
 
 def test_bind_log_context_from_task_sets_request_trace_and_span():
     task = SimpleNamespace(
-        request=SimpleNamespace(headers={"x-request-id": "req-8", "x-trace-id": "trace-8", "x-span-id": "span-8"})
+        request=SimpleNamespace(
+            headers={
+                "x-request-id": "req-8",
+                "x-trace-id": "trace-8",
+                "x-span-id": "span-8",
+                "x-project-id": "project-8",
+                "x-org-id": "org-8",
+                "x-tenant": "tenant-8",
+                "x-user-id": "user-8",
+            }
+        )
     )
 
     with bind_log_context_from_task(task) as values:
         assert values["request_id"] == "req-8"
         assert values["trace_id"] == "trace-8"
         assert values["span_id"] == "span-8"
+        assert values["project_id"] == "project-8"
+        assert values["org_id"] == "org-8"
+        assert values["tenant"] == "tenant-8"
+        assert values["user_id"] == "user-8"
         assert get_log_context()["trace_id"] == "trace-8"
 
     assert get_log_context()["trace_id"] is None

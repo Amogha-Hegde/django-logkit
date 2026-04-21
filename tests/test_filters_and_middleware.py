@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import django_logkit.middleware as middleware_module
+import pytest
 from django_logkit.filters import RequestIdFilter
 from django_logkit.middleware import (
     RequestContextMiddleware,
@@ -149,6 +150,23 @@ def test_request_context_middleware_uses_registered_resolvers(monkeypatch):
     assert request.project_id == "project-from-resolver"
 
 
+def test_request_context_middleware_resolver_snapshot_is_isolated(monkeypatch):
+    clear_request_context_resolvers()
+    register_request_context_resolver("tenant", lambda request: "tenant-a")
+    middleware = RequestContextMiddleware(lambda incoming_request: DummyResponse())
+    register_request_context_resolver("tenant", lambda request: "tenant-b")
+    times = iter([1.0, 1.01])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(META={})
+
+    try:
+        middleware(request)
+    finally:
+        clear_request_context_resolvers()
+
+    assert request.tenant == "tenant-a"
+
+
 def test_request_context_middleware_uses_opentelemetry_when_headers_missing(monkeypatch):
     times = iter([100.0, 100.010])
     monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
@@ -197,6 +215,22 @@ def test_request_id_middleware_uses_existing_headers_and_binds_context(monkeypat
 
     assert response["X-Request-ID"] == "req-2"
     assert request.duration_ms == 125
+    assert get_request_id() is None
+    assert get_log_context()["trace_id"] is None
+
+
+def test_request_context_middleware_clears_context_on_exception(monkeypatch):
+    times = iter([10.0, 10.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-exc"})
+
+    def get_response(incoming_request):
+        assert get_request_id() == "req-exc"
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        RequestContextMiddleware(get_response)(request)
+
     assert get_request_id() is None
     assert get_log_context()["trace_id"] is None
 
@@ -488,3 +522,15 @@ def test_request_id_middleware_is_idempotent_when_wrapped_twice(monkeypatch):
     assert request.request_id == "req-20"
     assert response["X-Request-ID"] == "req-20"
     assert logger.calls == [("info", "request_summary", {"event": "request_summary", "method": "GET", "path": "/api/health/", "status_code": "-"})]
+
+
+def test_request_log_middleware_preserves_original_exception(monkeypatch):
+    times = iter([50.0, 50.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(META={})
+
+    def get_response(incoming_request):
+        raise RuntimeError("original")
+
+    with pytest.raises(RuntimeError, match="original"):
+        RequestLogMiddleware(get_response)(request)

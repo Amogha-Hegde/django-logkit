@@ -45,6 +45,11 @@ def test_safe_plain_formatter_uses_configured_timezone():
     assert formatter.format(record).startswith("1970-01-01 00:00:00.000+00:00 hello")
 
 
+def test_safe_plain_formatter_rejects_unknown_timezone():
+    with pytest.raises(ValueError, match="unknown log_timezone"):
+        formatters.SafePlainFormatter("%(message)s", log_timezone="Mars/Phobos")
+
+
 def test_safe_plain_formatter_applies_text_field_defaults():
     formatter = formatters.SafePlainFormatter("%(user_id)s %(tenant)s", text_field_defaults={"user_id": "anonymous", "tenant": "public"})
     record = make_record()
@@ -159,6 +164,7 @@ def test_safe_colored_formatter_renders_structured_event_when_colorlog_available
 
 
 def test_json_formatter_uses_json_fallback(monkeypatch):
+    monkeypatch.setattr(formatters.socket, "gethostname", lambda: "app-worker-01")
     formatter = formatters.JsonFormatter()
     record = make_record("invoice created")
     record.event = "request_summary"
@@ -177,7 +183,6 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     monkeypatch.setattr(formatters, "orjson", None)
     monkeypatch.setenv("DJANGO_LOGKIT_SERVICE_NAME", "billing-api")
     monkeypatch.setenv("DJANGO_LOGKIT_ENVIRONMENT", "production")
-    monkeypatch.setattr(formatters.socket, "gethostname", lambda: "app-worker-01")
 
     rendered = formatter.format(record)
 
@@ -290,6 +295,19 @@ def test_json_formatter_uses_configured_timezone(monkeypatch):
 
     assert '"ts": "1970-01-01T00:00:00+00:00"' in rendered
     assert '"time": "1970-01-01 00:00:00.000+00:00"' in rendered
+
+
+def test_json_formatter_caches_hostname(monkeypatch):
+    calls = []
+    monkeypatch.setattr(formatters.socket, "gethostname", lambda: calls.append("called") or "app-worker-01")
+    formatter = formatters.JsonFormatter()
+    record = make_record("invoice created")
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    formatter.format(record)
+    formatter.format(record)
+
+    assert calls == ["called"]
 
 
 def test_json_formatter_includes_exception(monkeypatch):
