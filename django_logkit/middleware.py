@@ -357,7 +357,6 @@ class RequestContextMiddleware:
         self.body_max_length = _get_body_max_length()
         self.response_header_fields = ("request_id",) + _get_optional_response_fields_to_propagate()
         self.redacted_headers = _get_redacted_headers()
-        self.context_resolvers = _get_context_resolver_snapshot()
 
     def _log_request_response(self, request, response):
         path = getattr(request, "get_full_path", lambda: getattr(request, "path", "/"))()
@@ -424,13 +423,14 @@ class RequestContextMiddleware:
     def __call__(self, request):
         if getattr(request, REQUEST_GUARD_ATTR, False):
             response = self.get_response(request)
-            _propagate_response_headers(response, request, self.response_header_fields)
+            if response is not None:
+                _propagate_response_headers(response, request, self.response_header_fields)
             return response
 
         setattr(request, REQUEST_GUARD_ATTR, True)
         clear_pending_server_log_context()
         started_at = perf_counter()
-        context = _resolve_request_context(request, self.context_resolvers, generate_request_id=True)
+        context = _resolve_request_context(request, _get_context_resolver_snapshot(), generate_request_id=True)
         _set_request_context_attributes(request, context)
 
         response = None
@@ -445,7 +445,8 @@ class RequestContextMiddleware:
                         self._log_request_response(request, response)
                 _set_pending_server_context(context)
 
-        _propagate_response_headers(response, request, self.response_header_fields)
+        if response is not None:
+            _propagate_response_headers(response, request, self.response_header_fields)
         return response
 
 
@@ -462,7 +463,7 @@ class RequestLogMiddleware(RequestContextMiddleware):
         finally:
             if getattr(request, "duration_ms", None) is None:
                 request.duration_ms = _calculate_duration_ms(started_at, perf_counter())
-            context = _resolve_request_context(request, self.context_resolvers, generate_request_id=False)
+            context = _resolve_request_context(request, _get_context_resolver_snapshot(), generate_request_id=False)
             context["duration_ms"] = request.duration_ms
             _set_request_context_attributes(request, context)
             if response is not None:

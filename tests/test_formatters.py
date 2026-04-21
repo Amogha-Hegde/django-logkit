@@ -165,6 +165,8 @@ def test_safe_colored_formatter_renders_structured_event_when_colorlog_available
 
 def test_json_formatter_uses_json_fallback(monkeypatch):
     monkeypatch.setattr(formatters.socket, "gethostname", lambda: "app-worker-01")
+    monkeypatch.setenv("DJANGO_LOGKIT_SERVICE_NAME", "billing-api")
+    monkeypatch.setenv("DJANGO_LOGKIT_ENVIRONMENT", "production")
     formatter = formatters.JsonFormatter()
     record = make_record("invoice created")
     record.event = "request_summary"
@@ -181,8 +183,6 @@ def test_json_formatter_uses_json_fallback(monkeypatch):
     record.tenant = "tenant-1"
     record.duration_ms = 42
     monkeypatch.setattr(formatters, "orjson", None)
-    monkeypatch.setenv("DJANGO_LOGKIT_SERVICE_NAME", "billing-api")
-    monkeypatch.setenv("DJANGO_LOGKIT_ENVIRONMENT", "production")
 
     rendered = formatter.format(record)
 
@@ -308,6 +308,32 @@ def test_json_formatter_caches_hostname(monkeypatch):
     formatter.format(record)
 
     assert calls == ["called"]
+
+
+def test_json_formatter_caches_service_and_environment(monkeypatch):
+    values = {
+        "DJANGO_LOGKIT_SERVICE_NAME": "billing-api",
+        "DJANGO_LOGKIT_ENVIRONMENT": "production",
+    }
+    calls = []
+
+    def fake_getenv(key, default=None):
+        calls.append(key)
+        return values.get(key, default)
+
+    monkeypatch.setattr(formatters.os, "getenv", fake_getenv)
+    formatter = formatters.JsonFormatter()
+    record = make_record("invoice created")
+    monkeypatch.setattr(formatters, "orjson", None)
+
+    first = formatter.format(record)
+    second = formatter.format(record)
+
+    assert '"service": "billing-api"' in first
+    assert '"environment": "production"' in first
+    assert second == first
+    assert calls.count("DJANGO_LOGKIT_SERVICE_NAME") == 1
+    assert calls.count("DJANGO_LOGKIT_ENVIRONMENT") == 1
 
 
 def test_json_formatter_includes_exception(monkeypatch):

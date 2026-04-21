@@ -436,7 +436,7 @@ Register it once. If the same middleware is added multiple times, you can get du
 
 `RequestContextMiddleware` is the preferred name because it binds request-scoped context beyond `request_id`. `RequestIdMiddleware` remains available as a backward-compatible alias.
 `RequestLogMiddleware` is also available when you want request / response logging decoupled from context binding.
-The middleware implementation is sync-only today; on ASGI deployments Django will run it through its sync middleware path.
+The middleware implementation is sync-only today; on ASGI deployments Django will run it through its sync middleware path, which adds a sync/async boundary per request.
 
 Without the middleware:
 
@@ -554,6 +554,8 @@ from django_logkit import register_request_context_resolver
 register_request_context_resolver("tenant", lambda request: getattr(request, "account_slug", None))
 register_request_context_resolver("project_id", lambda request: request.headers.get("X-Project"))
 ```
+
+Resolvers are read from the live registry on each request, so registrations made after Django builds the middleware stack still take effect.
 
 Behavior:
 

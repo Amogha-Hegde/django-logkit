@@ -150,9 +150,9 @@ def test_request_context_middleware_uses_registered_resolvers(monkeypatch):
     assert request.project_id == "project-from-resolver"
 
 
-def test_request_context_middleware_resolver_snapshot_is_isolated(monkeypatch):
+def test_request_context_middleware_uses_late_registered_resolvers(monkeypatch):
     clear_request_context_resolvers()
-    register_request_context_resolver("tenant", lambda request: "tenant-a")
+    register_request_context_resolver("tenant", lambda request: None)
     middleware = RequestContextMiddleware(lambda incoming_request: DummyResponse())
     register_request_context_resolver("tenant", lambda request: "tenant-b")
     times = iter([1.0, 1.01])
@@ -164,7 +164,23 @@ def test_request_context_middleware_resolver_snapshot_is_isolated(monkeypatch):
     finally:
         clear_request_context_resolvers()
 
-    assert request.tenant == "tenant-a"
+    assert request.tenant == "tenant-b"
+
+
+def test_request_context_middleware_guard_path_skips_header_propagation_when_response_is_none(monkeypatch):
+    times = iter([60.0, 60.010])
+    monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
+    request = SimpleNamespace(META={"HTTP_X_REQUEST_ID": "req-guard"})
+
+    def get_response(incoming_request):
+        assert getattr(incoming_request, middleware_module.REQUEST_GUARD_ATTR, False) is True
+        return None
+
+    inner = RequestContextMiddleware(get_response)
+    outer = RequestContextMiddleware(inner)
+    response = outer(request)
+
+    assert response is None
 
 
 def test_request_context_middleware_uses_opentelemetry_when_headers_missing(monkeypatch):
@@ -534,3 +550,5 @@ def test_request_log_middleware_preserves_original_exception(monkeypatch):
 
     with pytest.raises(RuntimeError, match="original"):
         RequestLogMiddleware(get_response)(request)
+
+    assert request.duration_ms == 10

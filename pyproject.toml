@@ -41,6 +41,8 @@ json = [
 ]
 test = [
     "pytest>=8.0.0",
+    "pytest-django>=4.0",
+    "django>=3.2",
 ]
 
 [tool.setuptools.packages.find]

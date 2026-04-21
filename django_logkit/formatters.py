@@ -97,6 +97,15 @@ def _format_structured_event_message(record):
     return " ".join(parts)
 
 
+class _TimezoneAwareColoredFormatterMixin:
+    def __init__(self, parent, **kwargs):
+        super().__init__(**kwargs)
+        self._parent = parent
+
+    def formatTime(self, record, datefmt=None):
+        return self._parent.formatTime(record, datefmt)
+
+
 class SafePlainFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None, style="%", validate=True, log_timezone=None, text_field_defaults=None):
         super().__init__(fmt=fmt, datefmt=datefmt, style=style, validate=validate)
@@ -153,13 +162,8 @@ class SafeColoredFormatter(SafePlainFormatter):
                 text_field_defaults=text_field_defaults,
             )
         else:
-            class _TimezoneAwareColoredFormatter(ColoredFormatter):
-                def __init__(self, parent, **kwargs):
-                    super().__init__(**kwargs)
-                    self._parent = parent
-
-                def formatTime(self, record, datefmt=None):
-                    return self._parent.formatTime(record, datefmt)
+            class _TimezoneAwareColoredFormatter(_TimezoneAwareColoredFormatterMixin, ColoredFormatter):
+                pass
 
             self._formatter = _TimezoneAwareColoredFormatter(
                 self,
@@ -195,6 +199,8 @@ class JsonFormatter(logging.Formatter):
         self.json_field_defaults = dict(json_field_defaults or {})
         self.log_timezone = _resolve_timezone(log_timezone)
         self.hostname = socket.gethostname()
+        self.service_name = os.getenv("DJANGO_LOGKIT_SERVICE_NAME")
+        self.environment = os.getenv("DJANGO_LOGKIT_ENVIRONMENT")
         if django_server_message_mode not in VALID_DJANGO_SERVER_MESSAGE_MODES:
             raise ValueError("django_server_message_mode must be one of: request_line, event")
         self.django_server_message_mode = django_server_message_mode
@@ -294,12 +300,10 @@ class JsonFormatter(logging.Formatter):
                 if value is not None:
                     payload.setdefault(key, value)
 
-        service_name = os.getenv("DJANGO_LOGKIT_SERVICE_NAME")
-        environment = os.getenv("DJANGO_LOGKIT_ENVIRONMENT")
-        if service_name:
-            payload["service"] = service_name
-        if environment:
-            payload["environment"] = environment
+        if self.service_name:
+            payload["service"] = self.service_name
+        if self.environment:
+            payload["environment"] = self.environment
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
