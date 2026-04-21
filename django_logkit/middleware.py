@@ -31,7 +31,8 @@ def resolve_tenant_from_request(request):
         tenant = request.tenant
         return getattr(tenant, "slug", None) or getattr(tenant, "id", None) or getattr(tenant, "pk", None) or tenant
 
-    return getattr(request, "tenant_id", None) or request.META.get(get_header_name("tenant"))
+    meta = getattr(request, "META", {})
+    return getattr(request, "tenant_id", None) or meta.get(get_header_name("tenant"))
 
 
 def _resolve_otel_trace_context():

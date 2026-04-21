@@ -348,6 +348,22 @@ def test_request_id_filter_uses_pending_server_log_context():
     assert get_pending_server_log_context() is None
 
 
+def test_request_id_filter_handles_non_django_request_objects():
+    record = SimpleNamespace(name="django.server", request=object())
+
+    result = RequestIdFilter().filter(record)
+
+    assert result is True
+    assert record.request_id == "-"
+    assert record.trace_id == "-"
+    assert record.span_id == "-"
+    assert record.project_id == "-"
+    assert record.org_id == "-"
+    assert record.user_id == "-"
+    assert record.tenant == "-"
+    assert record.duration_ms == "-"
+
+
 def test_request_id_middleware_uses_env_overridden_headers(monkeypatch):
     times = iter([20.0, 20.010])
     monkeypatch.setattr(middleware_module, "perf_counter", lambda: next(times))
