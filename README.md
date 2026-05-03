@@ -1,5 +1,11 @@
 # django-logkit
 
+[![Tests](https://github.com/Amogha-Hegde/django-logkit/actions/workflows/ci.yml/badge.svg)](https://github.com/Amogha-Hegde/django-logkit/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/Amogha-Hegde/django-logkit/branch/main/graph/badge.svg)](https://codecov.io/gh/Amogha-Hegde/django-logkit)
+[![PyPI version](https://img.shields.io/pypi/v/django-logkit.svg)](https://pypi.org/project/django-logkit/)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-logkit.svg)](https://pypi.org/project/django-logkit/)
+[![PyPI downloads](https://static.pepy.tech/badge/django-logkit)](https://pepy.tech/project/django-logkit)
+
 `django-logkit` provides reusable Django logging configs with:
 
 - plain, color, or JSON output
